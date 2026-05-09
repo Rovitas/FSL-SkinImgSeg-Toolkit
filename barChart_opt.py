@@ -71,14 +71,13 @@ def calculate_optimizer_averages(results_dict):
             averaged[opt][wd] = avg_metrics
     return averaged
 
-# ================= 3. 核心绘图引擎 (拆分为1x3独立图纸) =================
+# ================= 3. 核心绘图引擎 (尺寸升级，撑满版面) =================
 def create_split_reference_charts(averaged_data, base_title="Metrics", save_base_path=None):
     models = list(averaged_data.keys())
     if not models: return
 
     models_reversed = list(reversed(models))
     
-    # 策略核心：将9个指标拆分为3个逻辑组，每组单独画一张图
     metric_groups = [
         {
             "name": "Part1_Core_Metrics",
@@ -100,24 +99,26 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
     cmap = plt.get_cmap('viridis')
     colors = cmap(np.linspace(0.1, 0.9, len(models_reversed)))
 
-    # 循环生成3张图纸
     for group in metric_groups:
-        # 完全复刻参考图比例：1行3列，宽20，高6 (极其舒展)
-        fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+        # 【修改点1】大幅提升高度，20x6 升级为 24x10，让每个子图更加宽大方正
+        fig, axes = plt.subplots(1, 3, figsize=(24, 10))
         
         for idx, metric in enumerate(group["metrics"]):
             ax = axes[idx]
             vals = [averaged_data[m].get(metric, np.nan) for m in models_reversed]
             
-            bars = ax.barh(models_reversed, vals, height=0.75, color=colors, alpha=0.9)
+            # 【修改点2】提升 height(柱子厚度)，0.75 升级为 0.82，减小留白，显得饱满
+            bars = ax.barh(models_reversed, vals, height=0.82, color=colors, alpha=0.9)
             
-            ax.set_title(metric, fontsize=16, fontweight='bold', pad=15)
+            ax.set_title(metric, fontsize=20, fontweight='bold', pad=20)
             ax.grid(axis='x', linestyle='--', alpha=0.6, color='gray')
             ax.set_axisbelow(True)
             
+            # 【修改点3】字号全面适配大图
             ax.set_yticks(np.arange(len(models_reversed)))
-            ax.set_yticklabels(models_reversed, fontsize=13, fontweight='bold')
-            ax.tick_params(axis='y', which='major', pad=8)
+            ax.set_yticklabels(models_reversed, fontsize=15, fontweight='bold')
+            ax.tick_params(axis='y', which='major', pad=10)
+            ax.tick_params(axis='x', which='major', labelsize=14)
             
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
@@ -126,18 +127,18 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
                 max_val = max([v for v in vals if not np.isnan(v)] or [1.0])
                 ax.set_xlim(0, max_val * 1.25) 
             else:
-                ax.set_xlim(0, 1.1)
+                ax.set_xlim(0, 1.15) # 给右侧数字多留一点点空间
                 
-            # 数字标签（字号调大到12，极其清晰）
             for bar in bars:
                 w = bar.get_width()
                 if not np.isnan(w) and w > 0:
                     fmt = '{:.2f}' if metric in ['Average Surface Distance (ASD)'] else ('{:.4f}' if metric == 'Val Loss' else '{:.3f}')
+                    # 字体也稍微调大到14
                     ax.text(w + (ax.get_xlim()[1] * 0.02), bar.get_y() + bar.get_height()/2., 
-                            fmt.format(w), ha='left', va='center', fontsize=12, color='#222222', fontweight='bold')
+                            fmt.format(w), ha='left', va='center', fontsize=14, color='#222222', fontweight='bold')
 
-        fig.suptitle(group["title"], fontsize=20, fontweight='bold', y=1.05)
-        plt.tight_layout(pad=2.0, w_pad=3.0)
+        fig.suptitle(group["title"], fontsize=26, fontweight='bold', y=1.03)
+        plt.tight_layout(pad=2.0, w_pad=3.5)
         
         if save_base_path: 
             os.makedirs(os.path.dirname(save_base_path), exist_ok=True)
