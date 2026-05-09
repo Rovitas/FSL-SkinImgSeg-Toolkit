@@ -7,8 +7,8 @@ import numpy as np
 from datetime import datetime
 
 # ================= 全局配置 (在这里修改字体大小) =================
-VALUE_FONT_SIZE = 18  # 柱子右侧的均值（主数字）大小
-STD_FONT_SIZE = 16    # 柱子右侧的标准差（±数）大小
+VALUE_FONT_SIZE = 16  # 柱子右侧的均值（主数字）大小
+STD_FONT_SIZE = 13    # 柱子右侧的标准差（±数）大小
 # =================================================================
 
 # ================= 1. 数据解析模块 =================
@@ -196,9 +196,14 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
                     ax.text(text_x, y_mean, fmt.format(w), ha='left', va='center', 
                             fontsize=value_fontsize, color='black', fontweight='bold')
                     
-                    # 2. 画标准差（灰色斜体，字体较小，带括号）
+                    # 2. 画标准差（灰色斜体，字体较小，带括号；并做阈值判断）
                     if std_val > 0:
-                        ax.text(text_x, y_std, f"(±{fmt.format(std_val)})", ha='left', va='center', 
+                        if std_val < 0.001:
+                            std_str = "<0.001"
+                        else:
+                            std_str = fmt.format(std_val)
+                            
+                        ax.text(text_x, y_std, f"(±{std_str})", ha='left', va='center', 
                                 fontsize=std_fontsize, color='#555555', fontstyle='italic')
 
         fig.suptitle(group["title"], fontsize=26, fontweight='bold', y=1.03)
@@ -220,7 +225,7 @@ if __name__ == "__main__":
     # [模式切换] : 'loss' 或 'optimizer'
     PLOT_MODE = 'optimizer' 
     
-    if PLOT_MODE == 'loss':  # <--- 已修复这里的错误条件！
+    if PLOT_MODE == 'loss':
         EXPERIMENTS_TO_PLOT = {
             'Baseline': "Adam_wd_1e-05",
             'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)",
@@ -231,7 +236,8 @@ if __name__ == "__main__":
         all_results = parse_evaluation_file(file_path)
         averaged_data = calculate_loss_averages(all_results, EXPERIMENTS_TO_PLOT)
         
-        export_mean_std_table(averaged_data, save_path=f"{IMG_BASE_PATH}_Table.csv")
+        # 保留了表格生成功能，但暂时注释掉
+        # export_mean_std_table(averaged_data, save_path=f"{IMG_BASE_PATH}_Table.csv")
         create_split_reference_charts(averaged_data, base_title="Loss Ablation", save_base_path=IMG_BASE_PATH)
             
     elif PLOT_MODE == 'optimizer':
@@ -249,5 +255,6 @@ if __name__ == "__main__":
             formatted_wd = format_wd(wd)
             if wd in raw_opt_data['AdamW']: flattened_opt_data[f"AdamW (WD={formatted_wd})"] = raw_opt_data['AdamW'][wd]
                 
-        export_mean_std_table(flattened_opt_data, save_path=f"{IMG_BASE_PATH}_Table.csv")
+        # 保留了表格生成功能，但暂时注释掉
+        # export_mean_std_table(flattened_opt_data, save_path=f"{IMG_BASE_PATH}_Table.csv")
         create_split_reference_charts(flattened_opt_data, base_title="Optimizer Analysis", save_base_path=IMG_BASE_PATH)
