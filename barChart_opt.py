@@ -7,33 +7,42 @@ from datetime import datetime
 
 # ================= 1. 数据解析模块 =================
 def parse_evaluation_file(file_path):
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"找不到文件: {file_path}")
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
+    """
+    解析评估结果 CSV 文件，提取实验数据
+    
+    Args:
+        file_path: csv文件路径
+        
+    Returns:
+        dict: {experiment_name: {metric: value}}
+    """
     results = {}
-    metric_patterns = {
-        'Val Loss': r'Val Loss:\s*([0-9.]+)',
-        'Dice (DSC)': r'Dice \(DSC\):\s*([0-9.]+)',
-        'IoU': r'IoU:\s*([0-9.]+)',
-        'Accuracy': r'Accuracy:\s*([0-9.]+)',
-        'Recall': r'Recall:\s*([0-9.]+)',
-        'Precision': r'Precision:\s*([0-9.]+)',
-        'PR-AUC': r'PR-AUC:\s*([0-9.N/A]+)',
-        'Average Surface Distance (ASD)': r'Average Surface Distance \(ASD\):\s*([0-9.]+)',
-        'Boundary F1 Score': r'Boundary F1 Score:\s*([0-9.]+)'
-    }
-    for exp in content.split('------------------------------------------------------------'):
-        exp_name_match = re.search(r'Experiment:\s*(.+)', exp)
-        if not exp_name_match: continue
-        exp_name = exp_name_match.group(1).strip()
-        metrics = {}
-        for metric, pattern in metric_patterns.items():
-            match = re.search(pattern, exp)
-            if match:
-                val = match.group(1)
-                metrics[metric] = np.nan if val == 'N/A' else float(val)
-        results[exp_name] = metrics
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # 提取实验名
+                exp_name = row.get('Experiment', '').strip()
+                if not exp_name:
+                    continue
+                metrics = {}
+                # 遍历这行的所有指标
+                for metric_name, value_str in row.items():
+                    if metric_name == 'Experiment':
+                        continue # 跳过名字列           
+                    value_str = value_str.strip()
+                    # 处理缺失值或空值
+                    if value_str == 'N/A' or not value_str:
+                        metrics[metric_name] = np.nan
+                    else:
+                        try:
+                            metrics[metric_name] = float(value_str)
+                        except ValueError:
+                            metrics[metric_name] = np.nan  
+                results[exp_name] = metrics
+    except Exception as e:
+        print(f"❌ 读取 CSV 文件出错 {file_path}: {e}")
     return results
 
 # ================= 2. 数据计算模块 (新增标准差计算) =================
@@ -203,7 +212,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
     
     # [模式切换] : 'loss' 或 'optimizer'
-    PLOT_MODE = 'optimizer' 
+    PLOT_MODE = 'loss' 
     
     if PLOT_MODE == 'loss':
         EXPERIMENTS_TO_PLOT = {
@@ -212,7 +221,7 @@ if __name__ == "__main__":
             'TverskyHD82': "TverskyHD(a0.3_b0.7w0.8_0.2)",
             'TverskyHD91': "TverskyHD(a0.3_b0.7w0.9_0.1)"
         }
-        file_path = os.path.join(BASE_PATH, "Losses_Comparsion.txt")
+        file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
         all_results = parse_evaluation_file(file_path)
         averaged_data = calculate_loss_averages(all_results, EXPERIMENTS_TO_PLOT)
         
@@ -222,8 +231,8 @@ if __name__ == "__main__":
         create_split_reference_charts(averaged_data, base_title="Loss Ablation", save_base_path=IMG_BASE_PATH)
             
     elif PLOT_MODE == 'optimizer':
-        adam_res = parse_evaluation_file(os.path.join(BASE_PATH, "Adam.txt"))
-        adamw_res = parse_evaluation_file(os.path.join(BASE_PATH, "AdamW.txt"))
+        adam_res = parse_evaluation_file(os.path.join(BASE_PATH, "Adam.csv"))
+        adamw_res = parse_evaluation_file(os.path.join(BASE_PATH, "AdamW.csv"))
         all_results = {**adam_res, **adamw_res}
         raw_opt_data = calculate_optimizer_averages(all_results)
         flattened_opt_data = {}
