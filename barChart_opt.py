@@ -201,7 +201,7 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
             save_path = f"{save_base_path}_{group['name']}.png"
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"✅ 生成子图表: {save_path}")
-        plt.show()
+        # plt.show()
 
 # ================= 4. 控制入口 =================
 if __name__ == "__main__":
@@ -214,7 +214,7 @@ if __name__ == "__main__":
     # [模式切换] : 'loss' 或 'optimizer'
     PLOT_MODE = 'loss' 
     
-    if PLOT_MODE == 'loss':
+    if PLOT_MODE == 'optimizer':
         EXPERIMENTS_TO_PLOT = {
             'Baseline': "Adam_wd_1e-05",
             'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)",
