@@ -1,5 +1,6 @@
 import os
 import re
+import csv
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
@@ -35,7 +36,7 @@ def parse_evaluation_file(file_path):
         results[exp_name] = metrics
     return results
 
-# ================= 2. 数据计算模块 =================
+# ================= 2. 数据计算模块 (新增标准差计算) =================
 def format_wd(wd_value):
     if wd_value == 0: return "0"
     return f"{wd_value:.0e}".replace("e-0", "e-")
@@ -45,11 +46,16 @@ def calculate_loss_averages(results_dict, config_dict):
     for display_name, target_keyword in config_dict.items():
         matched_metrics = [metrics for exp_name, metrics in results_dict.items() if target_keyword in exp_name]
         if matched_metrics:
-            avg_metrics = {}
+            metrics_summary = {}
             for metric_name in matched_metrics[0].keys():
                 vals = [m[metric_name] for m in matched_metrics if not np.isnan(m[metric_name])]
-                avg_metrics[metric_name] = np.mean(vals) if vals else np.nan
-            averaged[display_name] = avg_metrics
+                if vals:
+                    # ddof=1 表示计算样本标准差（学术规范）
+                    std_val = np.std(vals, ddof=1) if len(vals) > 1 else 0.0
+                    metrics_summary[metric_name] = {'mean': np.mean(vals), 'std': std_val}
+                else:
+                    metrics_summary[metric_name] = {'mean': np.nan, 'std': np.nan}
+            averaged[display_name] = metrics_summary
     return averaged
 
 def calculate_optimizer_averages(results_dict):
@@ -61,17 +67,54 @@ def calculate_optimizer_averages(results_dict):
         if wd_match:
             wd = float(wd_match.group(1))
             grouped[opt].setdefault(wd, []).append(metrics)
+            
     averaged = {'Adam': {}, 'AdamW': {}}
     for opt, wd_groups in grouped.items():
         for wd, metrics_list in wd_groups.items():
-            avg_metrics = {}
+            metrics_summary = {}
             for metric_name in metrics_list[0].keys():
                 vals = [m[metric_name] for m in metrics_list if not np.isnan(m[metric_name])]
-                avg_metrics[metric_name] = np.mean(vals) if vals else np.nan
-            averaged[opt][wd] = avg_metrics
+                if vals:
+                    std_val = np.std(vals, ddof=1) if len(vals) > 1 else 0.0
+                    metrics_summary[metric_name] = {'mean': np.mean(vals), 'std': std_val}
+                else:
+                    metrics_summary[metric_name] = {'mean': np.nan, 'std': np.nan}
+            averaged[opt][wd] = metrics_summary
     return averaged
 
-# ================= 3. 核心绘图引擎 (尺寸升级，撑满版面) =================
+# ================= 3. 表格导出模块 (新增) =================
+def export_mean_std_table(averaged_data, save_path):
+    """生成可以直接复制进 Word/Excel 的 Mean ± STD CSV表格"""
+    metrics_order = [
+        'Dice (DSC)', 'IoU', 'Accuracy', 'PR-AUC', 'Recall', 'Precision', 
+        'Boundary F1 Score', 'Average Surface Distance (ASD)', 'Val Loss'
+    ]
+    models = list(averaged_data.keys())
+    
+    with open(save_path, 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Model'] + metrics_order)
+        
+        for model in models:
+            row = [model]
+            for m in metrics_order:
+                mean_val = averaged_data[model].get(m, {}).get('mean', np.nan)
+                std_val  = averaged_data[model].get(m, {}).get('std', 0.0)
+                
+                if np.isnan(mean_val):
+                    row.append("N/A")
+                else:
+                    # 根据指标类型调整输出格式
+                    if m == 'Average Surface Distance (ASD)':
+                        row.append(f"{mean_val:.2f} ± {std_val:.2f}")
+                    elif m == 'Val Loss':
+                        row.append(f"{mean_val:.4f} ± {std_val:.4f}")
+                    else:
+                        row.append(f"{mean_val:.3f} ± {std_val:.3f}")
+            writer.writerow(row)
+    print(f"✅ 学术表格已生成: {save_path}")
+
+# ================= 4. 核心绘图引擎 (增加误差棒) =================
 def create_split_reference_charts(averaged_data, base_title="Metrics", save_base_path=None):
     models = list(averaged_data.keys())
     if not models: return
@@ -100,21 +143,23 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
     colors = cmap(np.linspace(0.1, 0.9, len(models_reversed)))
 
     for group in metric_groups:
-        # 【修改点1】大幅提升高度，20x6 升级为 24x10，让每个子图更加宽大方正
         fig, axes = plt.subplots(1, 3, figsize=(24, 10))
         
         for idx, metric in enumerate(group["metrics"]):
             ax = axes[idx]
-            vals = [averaged_data[m].get(metric, np.nan) for m in models_reversed]
             
-            # 【修改点2】提升 height(柱子厚度)，0.75 升级为 0.82，减小留白，显得饱满
-            bars = ax.barh(models_reversed, vals, height=0.82, color=colors, alpha=0.9)
+            # 提取 Mean 和 STD
+            means = [averaged_data[m].get(metric, {}).get('mean', np.nan) for m in models_reversed]
+            stds  = [averaged_data[m].get(metric, {}).get('std', 0.0) for m in models_reversed]
+            
+            # 绘制带有误差棒的柱状图 (xerr)
+            bars = ax.barh(models_reversed, means, height=0.82, color=colors, alpha=0.9,
+                           xerr=stds, capsize=6, error_kw={'elinewidth': 1.5, 'ecolor': '#444444'})
             
             ax.set_title(metric, fontsize=20, fontweight='bold', pad=20)
             ax.grid(axis='x', linestyle='--', alpha=0.6, color='gray')
             ax.set_axisbelow(True)
             
-            # 【修改点3】字号全面适配大图
             ax.set_yticks(np.arange(len(models_reversed)))
             ax.set_yticklabels(models_reversed, fontsize=15, fontweight='bold')
             ax.tick_params(axis='y', which='major', pad=10)
@@ -123,25 +168,27 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
 
+            # 动态调整X轴范围，确保误差棒和文字不被裁切
             if metric in ['Average Surface Distance (ASD)', 'Val Loss']:
-                max_val = max([v for v in vals if not np.isnan(v)] or [1.0])
-                ax.set_xlim(0, max_val * 1.25) 
+                max_val = max([m + s for m, s in zip(means, stds) if not np.isnan(m)] or [1.0])
+                ax.set_xlim(0, max_val * 1.30) 
             else:
-                ax.set_xlim(0, 1.15) # 给右侧数字多留一点点空间
+                ax.set_xlim(0, 1.2) # 增加了留白
                 
-            for bar in bars:
+            # 文字标签偏移：推到误差棒的右侧
+            for bar, std in zip(bars, stds):
                 w = bar.get_width()
                 if not np.isnan(w) and w > 0:
                     fmt = '{:.2f}' if metric in ['Average Surface Distance (ASD)'] else ('{:.4f}' if metric == 'Val Loss' else '{:.3f}')
-                    # 字体也稍微调大到14
-                    ax.text(w + (ax.get_xlim()[1] * 0.02), bar.get_y() + bar.get_height()/2., 
+                    # 文字的X坐标 = 柱子宽度 + 标准差长度 + 额外偏移留白
+                    text_x = w + std + (ax.get_xlim()[1] * 0.02)
+                    ax.text(text_x, bar.get_y() + bar.get_height()/2., 
                             fmt.format(w), ha='left', va='center', fontsize=14, color='#222222', fontweight='bold')
 
         fig.suptitle(group["title"], fontsize=26, fontweight='bold', y=1.03)
         plt.tight_layout(pad=2.0, w_pad=3.5)
         
         if save_base_path: 
-            os.makedirs(os.path.dirname(save_base_path), exist_ok=True)
             save_path = f"{save_base_path}_{group['name']}.png"
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"✅ 生成子图表: {save_path}")
@@ -151,7 +198,9 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
 if __name__ == "__main__":
     BASE_PATH = r"D:\Work\Python\_MSDT\calcuMetrics"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     IMG_BASE_PATH = os.path.join(BASE_PATH, 'image', f'metrics_{timestamp}')
+    os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
     
     # [模式切换] : 'loss' 或 'optimizer'
     PLOT_MODE = 'optimizer' 
@@ -166,6 +215,10 @@ if __name__ == "__main__":
         file_path = os.path.join(BASE_PATH, "Losses_Comparsion.txt")
         all_results = parse_evaluation_file(file_path)
         averaged_data = calculate_loss_averages(all_results, EXPERIMENTS_TO_PLOT)
+        
+        # 导出CSV表格
+        export_mean_std_table(averaged_data, save_path=f"{IMG_BASE_PATH}_Table.csv")
+        # 绘制误差图
         create_split_reference_charts(averaged_data, base_title="Loss Ablation", save_base_path=IMG_BASE_PATH)
             
     elif PLOT_MODE == 'optimizer':
@@ -183,4 +236,7 @@ if __name__ == "__main__":
             formatted_wd = format_wd(wd)
             if wd in raw_opt_data['AdamW']: flattened_opt_data[f"AdamW (WD={formatted_wd})"] = raw_opt_data['AdamW'][wd]
                 
+        # 导出CSV表格
+        export_mean_std_table(flattened_opt_data, save_path=f"{IMG_BASE_PATH}_Table.csv")
+        # 绘制误差图
         create_split_reference_charts(flattened_opt_data, base_title="Optimizer Analysis", save_base_path=IMG_BASE_PATH)
