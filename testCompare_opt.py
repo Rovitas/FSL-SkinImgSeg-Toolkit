@@ -51,7 +51,7 @@ def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_pat
         items = items[:n_rows * n_cols]
 
     # 【核心修复】：基于正方形 Cell Size 动态计算大小，高度略微增加 0.5 给标题留空间
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * CELL_SIZE, n_rows * CELL_SIZE + 2.0))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * CELL_SIZE, n_rows * CELL_SIZE + 1.6))
     axes = np.atleast_1d(axes).flatten()
     
     for i in range(n_rows * n_cols):
@@ -76,8 +76,8 @@ def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_pat
     plt.tight_layout(w_pad=0.2, h_pad=1.0) 
     
     # 给底部的图例额外留一点空间，防止被切掉
-    fig.subplots_adjust(bottom=0.1) 
-    fig.legend(handles=[gt_patch], loc='lower center', ncol=1, bbox_to_anchor=(0.5, 0.01), fontsize=14)
+    fig.subplots_adjust(bottom=0.07) 
+    fig.legend(handles=[gt_patch], loc='lower center', ncol=1, bbox_to_anchor=(0.5, 0.03), fontsize=14)
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
@@ -122,32 +122,56 @@ def run_qualitative_pipeline(test_loader, models_dict, save_dir, max_samples=Non
             print(f"✅ 生成成功: comparison_{sample_name}.png")
             processed_count += 1
 
+
+
 # ================= 核心控制入口 =================
 if __name__ == "__main__":
     TEST_DIR = r"d:\Work\Python\_MSDT\images_split\test"
     RESULTS_ROOT = r"D:\Work\Python\_MSDT\saved_results"
-    SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img\XIAORONG"
-    
-    EXPERIMENTS_TO_COMPARE = {
-        # Adam VS AdamW
-        # 'Adam': "Adam_wd_1e-05[Seed_48]",          
-        # 'AdamW': "AdamW_wd_1e-05[Seed_48]",              
-        # 'TverskyHD_Single': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single",
-        # 'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]"
+    SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img"
+    MAX_OUTPUT_IMAGES = 5  
+    TARGET_IMAGE_IDS = None  
+    LAYOUT_ROWS = 2  
+    LAYOUT_COLS = 3
 
-        # 消融实验用
+    IMG_MODE='xiaorong'
+
+    if IMG_MODE.lower() == 'optimizer':
+        EXPERIMENTS_TO_COMPARE = {
+        'Adam': "Adam_wd_1e-05[Seed_48]",          
+        'AdamW': "AdamW_wd_1e-05[Seed_48]",              
+        }
+        SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Adam-AdamW')  
+        TARGET_IMAGE_IDS = ['IMD003', 'IMD390', 'IMD424']
+        LAYOUT_ROWS = 2  
+        LAYOUT_COLS = 2 
+    elif IMG_MODE.lower() == 'loss':
+        EXPERIMENTS_TO_COMPARE = {   
+        'BCE': "AdamW_wd_1e-05[Seed_48]",                  
+        'Dice': "DiceLoss[Seed_48]",
+        'Focal': "FocalLoss(a0.25_g2)[Seed_48]",
+        'Tversky': "TverskyLoss(a0.3_b0.7)[Seed_48]",
+        # 'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)[Seed_48]",
+        # 'TverskyHD82': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]",       
+        }
+        SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Losses_Comparison')
+        TARGET_IMAGE_IDS = ['IMD003', 'IMD044', 'IMD090'] # 消融实验用
+        LAYOUT_ROWS = 2  
+        LAYOUT_COLS = 3 
+    elif IMG_MODE.lower() == 'xiaorong':
+        EXPERIMENTS_TO_COMPARE = {
         'Baseline': "Adam_wd_1e-05[Seed_48]",          
         'AdamW': "AdamW_wd_1e-05[Seed_48]",              
         'TverskyHD_Single': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single",
         'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]"
-    }
-    
-    MAX_OUTPUT_IMAGES = 5  
-    # TARGET_IMAGE_IDS = None  
-    TARGET_IMAGE_IDS = ['IMD147', 'IMD284', 'IMD424'] # 消融实验用
-    
-    LAYOUT_ROWS = 2  
-    LAYOUT_COLS = 3  
+        }
+        os.path.join(SAVE_FOLDER, 'XIAORONG')
+        TARGET_IMAGE_IDS = ['IMD147', 'IMD284', 'IMD424']
+        LAYOUT_ROWS = 2  
+        LAYOUT_COLS = 3 
+    else:
+        print(f"⚠️ Unknown mode: {IMG_MODE}, showing optimizer as default.")   
+
 
     transform = transforms.Compose([transforms.Resize((256, 256)), transforms.ToTensor()])
     test_set = MYDataset(base_dir=TEST_DIR, transform=transform)
@@ -156,7 +180,7 @@ if __name__ == "__main__":
     print("⏳ 正在根据配置精确加载模型...")
     active_models = load_selected_models(EXPERIMENTS_TO_COMPARE, RESULTS_ROOT)
     
-    print(f"\n🚀 开始定性对比分析，保存路径: {SAVE_FOLDER}")
+    print(f"\n🚀 开始定性对比分析")
     run_qualitative_pipeline(
         test_loader=loader, 
         models_dict=active_models, 
@@ -166,4 +190,4 @@ if __name__ == "__main__":
         grid_rows=LAYOUT_ROWS,          
         grid_cols=LAYOUT_COLS           
     )
-    print("\n🎉 定性分析完成！请检查输出文件夹。")
+    print("\n🎉 定性分析完成！请检查输出文件夹:{SAVE_FOLDER}")
