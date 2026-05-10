@@ -11,76 +11,72 @@ import matplotlib.pyplot as plt
 # ================= 全局配置区 =================
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-LOSS_FUNCTIONS_MAP = {
-    'Baseline': "Adam_wd_1e-05", 
-    'AdamW': "AdamW_wd_1e-05", 
-    'BCE': "AdamW_wd_1e-05",
-    'Dice': "DiceLoss", 
-    'Focal': "FocalLoss(a0.25_g2)", 
-    'Tversky': "TverskyLoss(a0.3_b0.7)",
-    'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)", 
-    'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)single"
-}
-# ==============================================
+# 字体与布局控制
+TITLE_FONT_SIZE = 14      # 每张子图标题的字体大小
+FIG_HEIGHT = 5            # 画布的高度 (单位：英寸)
+WIDTH_PER_COL = 3.5       # 每一列图像占用的宽度 (单位：英寸)
+# ============================================
 
-# 模块 1：模型管家 (专门负责从硬盘加载和初始化模型)
-def load_models(model_names, results_base_dir):
-    """根据提供的名称列表，批量加载模型权重并返回模型字典"""
+# 模块 1: 模型加载引擎 (精确匹配)
+def load_selected_models(experiments_dict, results_base_dir):
+    """
+    根据配置字典中的精确文件夹名称，直接加载对应的模型权重
+    """
     models = {}
-    for name in model_names:
-        if name not in LOSS_FUNCTIONS_MAP:
-            print(f"⚠️ 警告: {name} 不在映射表中，已跳过。")
-            continue
-            
-        # 路径拼接逻辑独立出来，不依赖外部环境
-        folder_name = f"{LOSS_FUNCTIONS_MAP[name]}[Seed_48]"
-        model_path = os.path.join(results_base_dir, folder_name, "models", "best_model.pth")
+    
+    for display_name, exact_folder_name in experiments_dict.items():
+        # 精确拼接路径
+        model_path = os.path.join(results_base_dir, exact_folder_name, "models", "best_model.pth")
         
         if os.path.exists(model_path):
-            print(f"Loading {name}: {model_path}") 
+            print(f"Loading {display_name}: {model_path}") 
             model = UNet().to(DEVICE)
             model.load_state_dict(torch.load(model_path, map_location=DEVICE, weights_only=True)['model_state_dict'])
             model.eval()
-            models[name] = model
+            models[display_name] = model
         else:
-            print(f"❌ 找不到模型文件: {model_path}")
+            print(f"❌ 警告: 找不到指定的模型文件: {model_path}")
             
     return models
 
-# 模块 2：画图引擎 (纯粹的画图逻辑，不沾染任何 PyTorch 的张量计算)
-def plot_and_save_comparison(original_img, ground_truth, predictions_dict, save_path):
+# 模块 2: 定性绘图引擎
+def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_path, 
+                                title_fs=TITLE_FONT_SIZE, fig_h=FIG_HEIGHT, w_per_col=WIDTH_PER_COL):
     """
-    处理单张样本的绘图和保存
-    original_img: numpy array (H, W, C)
-    ground_truth: numpy array (H, W)
-    predictions_dict: {'ModelName': numpy array (H, W)}
+    负责单张对比图的排版与保存
     """
-    cols = len(predictions_dict) + 2
-    plt.figure(figsize=(min(20, 3 * cols), 4))
+    # 计算列数：原图 + GT + 各个模型结果
+    n_cols = len(preds_dict) + 2
+    total_width = n_cols * w_per_col
     
-    # 准备要画的数据队列
-    plot_items = [
+    # 动态创建画布大小
+    fig, axes = plt.subplots(1, n_cols, figsize=(total_width, fig_h))
+    
+    # 准备待显示的数据列表
+    items = [
         ('Original Image', np.clip(original_img, 0, 1), None),
         ('Ground Truth', ground_truth, 'gray')
     ]
-    plot_items.extend([(f'{name}', pred, 'gray') for name, pred in predictions_dict.items()])
+    items.extend([(f'{name}', pred, 'gray') for name, pred in preds_dict.items()])
     
-    # 循环画图
-    for i, (title, img, cmap) in enumerate(plot_items, 1):
-        plt.subplot(1, cols, i)
-        plt.title(title, pad=10, fontweight='bold')
-        plt.imshow(img, cmap=cmap)
-        plt.axis('off')
+    # 循环渲染子图
+    for i, (title, img, cmap) in enumerate(items):
+        ax = axes[i]
+        ax.set_title(title, fontsize=title_fs, fontweight='bold', pad=12)
+        ax.imshow(img, cmap=cmap)
+        ax.axis('off')
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
 
-# 模块 3：核心业务流 (负责拉取数据、调用推理、分发画图任务)
-def run_qualitative_analysis(test_loader, models_dict, save_dir):
-    """执行定性分析的主循环"""
+# 模块 3: 业务流水线
+def run_qualitative_pipeline(test_loader, models_dict, save_dir):
+    """
+    遍历测试集并分发绘图任务
+    """
     if not models_dict:
-        print("❌ 错误: 未提供任何可用模型!")
+        print("❌ 错误: 没有成功加载任何可用的模型。")
         return
 
     os.makedirs(save_dir, exist_ok=True)
@@ -89,44 +85,54 @@ def run_qualitative_analysis(test_loader, models_dict, save_dir):
         for idx, (images, labels) in enumerate(test_loader):
             images, labels = images.to(DEVICE), labels.to(DEVICE)
             
-            # 推理并二值化转换为 Numpy
-            preds_dict = {}
+            # 批量获取所有模型对该图的预测结果
+            current_preds = {}
             for name, model in models_dict.items():
-                pred = model(images)[0].cpu().numpy().squeeze()
-                preds_dict[name] = (pred >= 0.5).astype(np.float32)
+                out = model(images)[0].cpu().numpy().squeeze()
+                current_preds[name] = (out >= 0.5).astype(np.float32)
             
-            # 提取原图和 GT 转换为 Numpy
-            orig_img = images[0].cpu().numpy().transpose(1, 2, 0)
-            gt_img = labels[0].cpu().numpy().squeeze()
+            # 转换原图和标签为 Numpy 格式
+            raw_img = images[0].cpu().numpy().transpose(1, 2, 0)
+            gt_mask = labels[0].cpu().numpy().squeeze()
             
-            # 兼容处理：如果你未来的 dataset 去掉了 sample_id，这里不会报错
-            sample_id = getattr(test_loader.dataset, 'sample_id', f'sample_{idx}')
-            save_path = os.path.join(save_dir, f'comparison_{sample_id}.png')
+            # 确定保存文件名
+            sample_name = getattr(test_loader.dataset, 'sample_id', f'img_{idx}')
+            save_name = os.path.join(save_dir, f'comparison_{sample_name}.png')
             
-            # 交给专门的画图函数去处理
-            plot_and_save_comparison(orig_img, gt_img, preds_dict, save_path)
-            # print(f"✅ Saved: comparison_{sample_id}.png")
+            # 调用绘图引擎
+            plot_qualitative_comparison(raw_img, gt_mask, current_preds, save_name)
 
-# ================= 控制入口 =================
+# ================= 核心控制入口 =================
 if __name__ == "__main__":
-    # 1. 所有的硬编码路径统一提到最外层，方便后期维护
+    # --- 1. 路径设置 ---
     TEST_DIR = r"d:\Work\Python\_MSDT\images_split\test"
-    RESULTS_BASE_DIR = r"D:\Work\Python\_MSDT\saved_results"
-    SAVE_DIR = r"D:\Work\Python\_MSDT\compare_img\Adam-AdamW"
-    # SAVE_DIR = r"D:\Work\Python\_MSDT\compare_img\Adam-AdamW"
-    # SAVE_DIR = r"D:\Work\Python\_MSDT\compare_img\XIAORONG"
+    RESULTS_ROOT = r"D:\Work\Python\_MSDT\saved_results"
+    SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img\XIAORONG"
     
-    selected_losses = ['Baseline', 'AdamW', 'TverskyHD' ,'Combo']
+    # --- 2. 在这里配置你需要对比的模型 (精确匹配) ---
+    # 格式: '图表上显示的简称': '对应的完整精确文件夹名'
+    EXPERIMENTS_TO_COMPARE = {
+        'Baseline': "Adam_wd_1e-05[Seed_48]",          
+        'BCE': "AdamW_wd_1e-05[Seed_48]",              
+        'Dice': "DiceLoss[Seed_48]",
+        'Focal': "FocalLoss(a0.25_g2)[Seed_48]",
+        'Tversky': "TverskyLoss(a0.3_b0.7)[Seed_48]",
+        # 'TverskyHD(0.5:0.5)': "TverskyHD(a0.3_b0.7w0.5_0.5)[Seed_48]",
+        'TverskyHD(0.8:0.2)': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]",
+        # 'TverskyHD(0.9:0.1)': "TverskyHD(a0.3_b0.7w0.9_0.1)[Seed_48]",
+        'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]"
+    }
     
-    # 2. 初始化数据流
+    # --- 3. 初始化数据加载 ---
     transform = transforms.Compose([transforms.Resize((256, 256)), transforms.ToTensor()])
-    test_dataset = MYDataset(base_dir=TEST_DIR, transform=transform)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    test_set = MYDataset(base_dir=TEST_DIR, transform=transform)
+    loader = DataLoader(test_set, batch_size=1, shuffle=False)
     
-    # 3. 组装并运行管线
-    print("⏳ 开始加载模型...")
-    loaded_models = load_models(selected_losses, RESULTS_BASE_DIR)
+    # --- 4. 运行流水线 ---
+    print("⏳ 正在根据配置精确加载模型...")
+    active_models = load_selected_models(EXPERIMENTS_TO_COMPARE, RESULTS_ROOT)
     
-    print(f"🚀 开始生成对比图，保存至: {SAVE_DIR}")
-    run_qualitative_analysis(test_loader, loaded_models, SAVE_DIR)
-    print("🎉 定性分析完成！")
+    print(f"\n🚀 开始定性对比分析，保存路径: {SAVE_FOLDER}")
+    run_qualitative_pipeline(loader, active_models, SAVE_FOLDER)
+    
+    print("\n🎉 定性分析完成！请检查输出文件夹。")
