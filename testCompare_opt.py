@@ -107,7 +107,7 @@ if __name__ == "__main__":
     # --- 1. 路径设置 ---
     TEST_DIR = r"d:\Work\Python\_MSDT\images_split\test"
     RESULTS_ROOT = r"D:\Work\Python\_MSDT\saved_results"
-    SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img\XIAORONG"
+    SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img\Losses_Comparison"
     
     # --- 2. 在这里配置你需要对比的模型 (精确匹配) ---
     # 格式: '图表上显示的简称': '对应的完整精确文件夹名'
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         # 'TverskyHD(0.5:0.5)': "TverskyHD(a0.3_b0.7w0.5_0.5)[Seed_48]",
         'TverskyHD(0.8:0.2)': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]",
         # 'TverskyHD(0.9:0.1)': "TverskyHD(a0.3_b0.7w0.9_0.1)[Seed_48]",
-        'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]"
+        # 'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]"
     }
     
     # --- 3. 初始化数据加载 ---
