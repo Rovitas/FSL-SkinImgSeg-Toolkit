@@ -7,8 +7,9 @@ import numpy as np
 from datetime import datetime
 
 # ================= 全局配置 (在这里修改字体大小) =================
-VALUE_FONT_SIZE = 16  # 柱子右侧的均值（主数字）大小
-STD_FONT_SIZE = 13    # 柱子右侧的标准差（SD:数）大小
+LABEL_FONT_SIZE = 18  # 左侧 Y 轴实验名称的字体大小
+VALUE_FONT_SIZE = 20  # 柱子右侧的均值（主数字）大小
+STD_FONT_SIZE = 16    # 柱子右侧的标准差（SD数字）大小
 # =================================================================
 
 # ================= 1. 数据解析模块 =================
@@ -89,7 +90,7 @@ def calculate_optimizer_averages(results_dict):
 
 # ================= 3. 表格导出模块 =================
 def export_mean_std_table(averaged_data, save_path):
-    """生成可以直接复制进 Word/Excel 的 Mean SD CSV表格"""
+    """生成可以直接复制进 Word/Excel 的 Mean ± STD CSV表格"""
     metrics_order = [
         'Dice (DSC)', 'IoU', 'Accuracy', 'PR-AUC', 'Recall', 'Precision', 
         'Boundary F1 Score', 'Average Surface Distance (ASD)', 'Val Loss'
@@ -110,17 +111,18 @@ def export_mean_std_table(averaged_data, save_path):
                     row.append("N/A")
                 else:
                     if m == 'Average Surface Distance (ASD)':
-                        row.append(f"{mean_val:.2f} SD: {std_val:.2f}")
+                        row.append(f"{mean_val:.2f} ± {std_val:.2f}")
                     elif m == 'Val Loss':
-                        row.append(f"{mean_val:.4f} SD: {std_val:.4f}")
+                        row.append(f"{mean_val:.4f} ± {std_val:.4f}")
                     else:
-                        row.append(f"{mean_val:.3f} SD: {std_val:.3f}")
+                        row.append(f"{mean_val:.3f} ± {std_val:.3f}")
             writer.writerow(row)
     print(f"✅ 学术表格已生成: {save_path}")
 
 # ================= 4. 核心绘图引擎 (生成三个分开的大图) =================
 def create_split_reference_charts(averaged_data, base_title="Metrics", save_base_path=None,
-                                  value_fontsize=VALUE_FONT_SIZE, std_fontsize=STD_FONT_SIZE):
+                                  value_fontsize=VALUE_FONT_SIZE, std_fontsize=STD_FONT_SIZE,
+                                  label_fontsize=LABEL_FONT_SIZE):
     models = list(averaged_data.keys())
     if not models: return
 
@@ -164,7 +166,10 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
             ax.set_axisbelow(True)
             
             ax.set_yticks(np.arange(len(models_reversed)))
-            ax.set_yticklabels(models_reversed, fontsize=15, fontweight='bold')
+            
+            # === 这里用上了新的全局变量 label_fontsize ===
+            ax.set_yticklabels(models_reversed, fontsize=label_fontsize, fontweight='bold')
+            
             ax.tick_params(axis='y', which='major', pad=10)
             ax.tick_params(axis='x', which='major', labelsize=14)
             
@@ -178,7 +183,7 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
             else:
                 ax.set_xlim(0, min(1.35, max_val * 1.35)) 
                 
-            # === 核心修改：均值和标准差差异化标注 ===
+            # === 均值和标准差差异化标注 ===
             for bar, mean_val, std_val in zip(bars, means, stds):
                 w = bar.get_width()
                 if not np.isnan(w) and w > 0:
@@ -196,14 +201,15 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
                     ax.text(text_x, y_mean, fmt.format(w), ha='left', va='center', 
                             fontsize=value_fontsize, color='black', fontweight='bold')
                     
-                    # 2. 画标准差（灰色斜体，字体较小，带括号；并做阈值判断）
+                    # 2. 画标准差（明确标示为 SD，消除学术歧义）
                     if std_val > 0:
                         if std_val < 0.001:
                             std_str = "<0.001"
                         else:
                             std_str = fmt.format(std_val)
                             
-                        ax.text(text_x, y_std, f"(SD:{std_str})", ha='left', va='center', 
+                        # 去掉了 ± 号，加上了 SD: 
+                        ax.text(text_x, y_std, f"(SD: {std_str})", ha='left', va='center', 
                                 fontsize=std_fontsize, color='#555555', fontstyle='italic')
 
         fig.suptitle(group["title"], fontsize=26, fontweight='bold', y=1.03)
@@ -227,10 +233,11 @@ if __name__ == "__main__":
     
     if PLOT_MODE == 'loss':
         EXPERIMENTS_TO_PLOT = {
-            'BCE(Baseline)': "AdamW_wd_1e-05",
-            'Dice':"DiceLoss",
-            'Focal':"FocalLoss",
-            'Tversky': "TverskyLoss(a0.3_b0.7)",
+            'Baseline': "Adam_wd_1e-05",          
+            'BCE': "AdamW_wd_1e-05",              
+            'Dice': "DiceLoss",
+            'Focal': "FocalLoss",
+            'Tversky': "TverskyLoss",
             'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)",
             'TverskyHD82': "TverskyHD(a0.3_b0.7w0.8_0.2)",
             'TverskyHD91': "TverskyHD(a0.3_b0.7w0.9_0.1)"
@@ -241,7 +248,7 @@ if __name__ == "__main__":
         
         # 保留了表格生成功能，但暂时注释掉
         # export_mean_std_table(averaged_data, save_path=f"{IMG_BASE_PATH}_Table.csv")
-        create_split_reference_charts(averaged_data, base_title="Loss Ablation", save_base_path=IMG_BASE_PATH)
+        create_split_reference_charts(averaged_data, base_title="Loss Comparison", save_base_path=IMG_BASE_PATH)
             
     elif PLOT_MODE == 'optimizer':
         adam_res = parse_evaluation_file(os.path.join(BASE_PATH, "Adam.csv"))
