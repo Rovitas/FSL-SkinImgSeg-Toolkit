@@ -132,7 +132,7 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
         {
             "name": "Part1_Core_Metrics",
             "title": f"{base_title}: Core Segmentation Metrics",
-            "metrics": ['Dice (DSC)', 'IoU', 'Accuracy']
+            "metrics": ['Dice (DSC)', 'IoU']
         },
         {
             "name": "Part2_Auxiliary_Metrics",
@@ -140,7 +140,7 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
             "metrics": ['PR-AUC', 'Recall', 'Precision']
         },
         {
-            "name": "Part3_Distance_and_Loss",
+            "name": "Part3_Distance_Metrics",
             "title": f"{base_title}: Boundary Metrics",
             "metrics": ['Boundary F1 Score', 'Average Surface Distance (ASD)']
         }
@@ -230,17 +230,18 @@ if __name__ == "__main__":
     BASE_PATH = r"D:\Work\Python\_MSDT\calcuMetrics"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    IMG_BASE_PATH = os.path.join(BASE_PATH, 'image', f'metrics_{timestamp}')
-    os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
-    
     # [模式切换] : 'loss' 或 'optimizer' 或者 'xiaorong'
-    PLOT_MODE = 'optimizer' 
+    PLOT_MODE = 'loss' 
+
+    IMG_BASE_PATH = os.path.join(BASE_PATH, 'image', f'{PLOT_MODE}_metrics_{timestamp}')
+    os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
     
     if PLOT_MODE == 'xiaorong':
         EXPERIMENTS_TO_PLOT = {
-            'Baseline': "Adam_wd_1e-05[",          
-            'AdamW': "AdamW_wd_1e-05[", 
-            'TverskyHD_Single':'TverskyHD(a0.3_b0.7w0.8_0.2)_Single[',             
+            'Baseline(BCE + Adam)': "Adam_wd_1e-05[",          
+            'BCE + AdamW': "AdamW_wd_1e-05[", 
+            'TverskyHD + Adam':'TverskyHD(a0.3_b0.7w0.8_0.2)_Single[',  
+            'TverskyHD + AdamW': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
             'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
         }
         file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
@@ -250,15 +251,14 @@ if __name__ == "__main__":
         create_split_reference_charts(averaged_data, base_title="Ablation Analysis", save_base_path=IMG_BASE_PATH)    
     
     elif PLOT_MODE == 'loss':
-        EXPERIMENTS_TO_PLOT = {
-            'Baseline': "Adam_wd_1e-05[",          
+        EXPERIMENTS_TO_PLOT = {        
             'BCE': "AdamW_wd_1e-05[",              
             'Dice': "DiceLoss[",
-            'Focal': "FocalLoss[",
-            'Tversky': "TverskyLoss[",
-            'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)[",
-            'TverskyHD82': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
-            'TverskyHD91': "TverskyHD(a0.3_b0.7w0.9_0.1)["
+            'Focal': "FocalLoss(a0.25_g2)[",
+            'Tversky': "TverskyLoss(a0.3_b0.7)[",
+            # 'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)[",
+            'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
+            # 'TverskyHD91': "TverskyHD(a0.3_b0.7w0.9_0.1)["
         }
         file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
         all_results = parse_evaluation_file(file_path)
