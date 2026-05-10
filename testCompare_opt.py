@@ -16,10 +16,11 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 TITLE_FONT_SIZE = 16      # 每张子图标题的字体大小
 CELL_SIZE = 3.5            # 【修改点1】: 统一用一个参数控制每个正方形格子的边长，消除长宽比冲突带来的巨大空白
 
-# GT 轮廓线控制
-GT_CONTOUR_COLOR = '#00FF00'  # 真实标签(GT)轮廓的颜色，默认亮绿色 ('#FF0000'为红色, '#00FF00'亮绿色 )
-GT_CONTOUR_LINEWIDTH = 4      # 【修改点2】: 在 DPI=300 的高分辨率下，调到 6 甚至 8 才能显得足够粗
-GT_CONTOUR_ALPHA = 0.7        # 【修改点3】: 设为 1.0，完全不透明，消除视觉变淡的问题
+# GT 轮廓线与显示控制
+GT_CONTOUR_COLOR = '#00FF00'  
+GT_CONTOUR_LINEWIDTH = 4      
+GT_CONTOUR_ALPHA = 0.7        
+SHOW_GT_SUBPLOT = False       # 【新增开关】: 设为 False 则隐藏单独的 Ground Truth 格子，只在其他图上显示绿线
 # ============================================================
 
 # 模块 1: 模型加载引擎 (精确匹配)
@@ -37,32 +38,32 @@ def load_selected_models(experiments_dict, results_base_dir):
             print(f"❌ 警告: 找不到指定的模型文件: {model_path}")
     return models
 
-# 模块 2: 定性绘图引擎 (修复网格间隙与线条显示)
+# 模块 2: 定性绘图引擎 (增加 GT 显示开关)
 def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_path, 
-                                n_rows, n_cols):
-    items = [
-        ('Original Image', np.clip(original_img, 0, 1), None),
-        ('Ground Truth', ground_truth, 'gray')
-    ]
+                                n_rows, n_cols, show_gt=SHOW_GT_SUBPLOT):
+    # 【核心修改】：根据开关决定是否把 GT 单独作为一个图放进列表中
+    items = [('Original Image', np.clip(original_img, 0, 1), None)]
+    
+    if show_gt:
+        items.append(('Ground Truth', ground_truth, 'gray'))
+        
     items.extend([(f'{name}', pred, 'gray') for name, pred in preds_dict.items()])
     
     if len(items) > n_rows * n_cols:
         print(f"⚠️ 警告: 要画的图({len(items)}张)多于网格数({n_rows}x{n_cols})。超出的部分将被忽略！")
         items = items[:n_rows * n_cols]
 
-    # 【核心修复】：基于正方形 Cell Size 动态计算大小，高度略微增加 0.5 给标题留空间
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * CELL_SIZE, n_rows * CELL_SIZE + 1.6))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * CELL_SIZE, n_rows * CELL_SIZE + 1.8))
     axes = np.atleast_1d(axes).flatten()
     
     for i in range(n_rows * n_cols):
         ax = axes[i]
         if i < len(items):
             title, img, cmap = items[i]
-            # pad 参数控制标题离图片的距离
             ax.set_title(title, fontsize=TITLE_FONT_SIZE, fontweight='bold', pad=10)
             ax.imshow(img, cmap=cmap)
             
-            # 画出 GT 的边缘轮廓
+            # 画出 GT 的边缘轮廓 (即使上面的单独 GT 图隐藏了，这里的 ground_truth 数据依然存在并能正常画线)
             if title != 'Ground Truth': 
                 ax.contour(ground_truth, levels=[0.5], colors=[GT_CONTOUR_COLOR], 
                            linewidths=GT_CONTOUR_LINEWIDTH, alpha=GT_CONTOUR_ALPHA)
@@ -76,7 +77,7 @@ def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_pat
     plt.tight_layout(w_pad=0.2, h_pad=1.0) 
     
     # 给底部的图例额外留一点空间，防止被切掉
-    fig.subplots_adjust(bottom=0.07) 
+    fig.subplots_adjust(bottom=0.05) 
     fig.legend(handles=[gt_patch], loc='lower center', ncol=1, bbox_to_anchor=(0.5, 0.03), fontsize=14)
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -100,8 +101,6 @@ def run_qualitative_pipeline(test_loader, models_dict, save_dir, max_samples=Non
                 if (idx not in target_ids) and (sample_name not in target_ids):
                     continue
             else:
-                print(f'\nidx:{idx}')
-                print(f'sample_name:{sample_name}')
                 if max_samples is not None and processed_count >= max_samples:
                     print(f"\n⏹ 已达到设定的最大输出数量 ({max_samples}张)，终止生成。")
                     break
@@ -122,19 +121,14 @@ def run_qualitative_pipeline(test_loader, models_dict, save_dir, max_samples=Non
             print(f"✅ 生成成功: comparison_{sample_name}.png")
             processed_count += 1
 
-
-
 # ================= 核心控制入口 =================
 if __name__ == "__main__":
     TEST_DIR = r"d:\Work\Python\_MSDT\images_split\test"
     RESULTS_ROOT = r"D:\Work\Python\_MSDT\saved_results"
     SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img"
-    MAX_OUTPUT_IMAGES = 5  
-    TARGET_IMAGE_IDS = None  
-    LAYOUT_ROWS = 2  
-    LAYOUT_COLS = 3
-
-    IMG_MODE='loss'
+    MAX_OUTPUT_IMAGES = None 
+    
+    IMG_MODE = 'optimizer'  
 
     if IMG_MODE.lower() == 'optimizer':
         EXPERIMENTS_TO_COMPARE = {
@@ -143,8 +137,8 @@ if __name__ == "__main__":
         }
         SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Adam-AdamW')  
         TARGET_IMAGE_IDS = ['IMD003', 'IMD390', 'IMD424']
-        LAYOUT_ROWS = 2  
-        LAYOUT_COLS = 2 
+        LAYOUT_ROWS = 1  
+        LAYOUT_COLS = 3 
     elif IMG_MODE.lower() == 'loss':
         EXPERIMENTS_TO_COMPARE = {   
         'BCE': "AdamW_wd_1e-05[Seed_50]",                  
@@ -155,23 +149,23 @@ if __name__ == "__main__":
         'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]",       
         }
         SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Losses_Comparison')
-        TARGET_IMAGE_IDS = ['IMD003', 'IMD044', 'IMD090'] # 消融实验用
+        TARGET_IMAGE_IDS = ['IMD003', 'IMD044', 'IMD090'] 
         LAYOUT_ROWS = 2  
-        LAYOUT_COLS = 4 
+        LAYOUT_COLS = 3 
+        
     elif IMG_MODE.lower() == 'xiaorong':
         EXPERIMENTS_TO_COMPARE = {
-        'Baseline': "Adam_wd_1e-05[Seed_48]",          
-        'AdamW': "AdamW_wd_1e-05[Seed_48]",              
-        'TverskyHD_Single': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single",
-        'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]"
+            'Baseline': "Adam_wd_1e-05[Seed_50]",          
+            'AdamW': "AdamW_wd_1e-05[Seed_50]",              
+            'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single",
+            'AdamW + TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]"
         }
-        os.path.join(SAVE_FOLDER, 'XIAORONG')
+        SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'XIAORONG')
         TARGET_IMAGE_IDS = ['IMD147', 'IMD284', 'IMD424']
         LAYOUT_ROWS = 2  
         LAYOUT_COLS = 3 
     else:
-        print(f"⚠️ Unknown mode: {IMG_MODE}, showing optimizer as default.")   
-
+        print(f"⚠️ Unknown mode: {IMG_MODE}")   
 
     transform = transforms.Compose([transforms.Resize((256, 256)), transforms.ToTensor()])
     test_set = MYDataset(base_dir=TEST_DIR, transform=transform)
