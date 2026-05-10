@@ -202,7 +202,7 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
                             fontsize=value_fontsize, color='black', fontweight='bold')
                     
                     # 2. 画标准差（明确标示为 SD，消除学术歧义）
-                    if std_val > 0:
+                    if std_val >= 0:
                         if std_val < 0.001:
                             std_str = "<0.001"
                         else:
@@ -228,19 +228,32 @@ if __name__ == "__main__":
     IMG_BASE_PATH = os.path.join(BASE_PATH, 'image', f'metrics_{timestamp}')
     os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
     
-    # [模式切换] : 'loss' 或 'optimizer'
-    PLOT_MODE = 'loss' 
+    # [模式切换] : 'loss' 或 'optimizer' 或者 'xiaorong'
+    PLOT_MODE = 'optimizer' 
     
-    if PLOT_MODE == 'loss':
+    if PLOT_MODE == 'xiaorong':
         EXPERIMENTS_TO_PLOT = {
-            'Baseline': "Adam_wd_1e-05",          
-            'BCE': "AdamW_wd_1e-05",              
-            'Dice': "DiceLoss",
-            'Focal': "FocalLoss",
-            'Tversky': "TverskyLoss",
-            'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)",
-            'TverskyHD82': "TverskyHD(a0.3_b0.7w0.8_0.2)",
-            'TverskyHD91': "TverskyHD(a0.3_b0.7w0.9_0.1)"
+            'Baseline': "Adam_wd_1e-05[",          
+            'AdamW': "AdamW_wd_1e-05[", 
+            'TverskyHD_Single':'TverskyHD(a0.3_b0.7w0.8_0.2)_Single[',             
+            'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
+        }
+        file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
+        all_results = parse_evaluation_file(file_path)
+        averaged_data = calculate_loss_averages(all_results, EXPERIMENTS_TO_PLOT)
+
+        create_split_reference_charts(averaged_data, base_title="Ablation Analysis", save_base_path=IMG_BASE_PATH)    
+    
+    elif PLOT_MODE == 'loss':
+        EXPERIMENTS_TO_PLOT = {
+            'Baseline': "Adam_wd_1e-05[",          
+            'BCE': "AdamW_wd_1e-05[",              
+            'Dice': "DiceLoss[",
+            'Focal': "FocalLoss[",
+            'Tversky': "TverskyLoss[",
+            'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)[",
+            'TverskyHD82': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
+            'TverskyHD91': "TverskyHD(a0.3_b0.7w0.9_0.1)["
         }
         file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
         all_results = parse_evaluation_file(file_path)
