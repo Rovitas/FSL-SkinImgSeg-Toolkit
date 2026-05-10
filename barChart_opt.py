@@ -141,8 +141,8 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
         },
         {
             "name": "Part3_Distance_and_Loss",
-            "title": f"{base_title}: Boundary & Loss Metrics",
-            "metrics": ['Boundary F1 Score', 'Average Surface Distance (ASD)', 'Val Loss']
+            "title": f"{base_title}: Boundary Metrics",
+            "metrics": ['Boundary F1 Score', 'Average Surface Distance (ASD)']
         }
     ]
 
@@ -150,7 +150,12 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
     colors = cmap(np.linspace(0.1, 0.9, len(models_reversed)))
 
     for group in metric_groups:
-        fig, axes = plt.subplots(1, 3, figsize=(24, 10))
+        n_metrics = len(group["metrics"]) 
+        # 每个指标分配宽度 8，动态计算总宽度
+        fig, axes = plt.subplots(1, n_metrics, figsize=(8 * n_metrics, 10))
+
+        if n_metrics == 1:
+            axes = [axes]
         
         for idx, metric in enumerate(group["metrics"]):
             ax = axes[idx]
