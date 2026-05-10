@@ -8,7 +8,7 @@ from datetime import datetime
 
 # ================= 全局配置 (在这里修改字体大小) =================
 VALUE_FONT_SIZE = 16  # 柱子右侧的均值（主数字）大小
-STD_FONT_SIZE = 13    # 柱子右侧的标准差（±数）大小
+STD_FONT_SIZE = 13    # 柱子右侧的标准差（SD:数）大小
 # =================================================================
 
 # ================= 1. 数据解析模块 =================
@@ -89,7 +89,7 @@ def calculate_optimizer_averages(results_dict):
 
 # ================= 3. 表格导出模块 =================
 def export_mean_std_table(averaged_data, save_path):
-    """生成可以直接复制进 Word/Excel 的 Mean ± STD CSV表格"""
+    """生成可以直接复制进 Word/Excel 的 Mean SD CSV表格"""
     metrics_order = [
         'Dice (DSC)', 'IoU', 'Accuracy', 'PR-AUC', 'Recall', 'Precision', 
         'Boundary F1 Score', 'Average Surface Distance (ASD)', 'Val Loss'
@@ -110,11 +110,11 @@ def export_mean_std_table(averaged_data, save_path):
                     row.append("N/A")
                 else:
                     if m == 'Average Surface Distance (ASD)':
-                        row.append(f"{mean_val:.2f} ± {std_val:.2f}")
+                        row.append(f"{mean_val:.2f} SD: {std_val:.2f}")
                     elif m == 'Val Loss':
-                        row.append(f"{mean_val:.4f} ± {std_val:.4f}")
+                        row.append(f"{mean_val:.4f} SD: {std_val:.4f}")
                     else:
-                        row.append(f"{mean_val:.3f} ± {std_val:.3f}")
+                        row.append(f"{mean_val:.3f} SD: {std_val:.3f}")
             writer.writerow(row)
     print(f"✅ 学术表格已生成: {save_path}")
 
@@ -203,7 +203,7 @@ def create_split_reference_charts(averaged_data, base_title="Metrics", save_base
                         else:
                             std_str = fmt.format(std_val)
                             
-                        ax.text(text_x, y_std, f"(±{std_str})", ha='left', va='center', 
+                        ax.text(text_x, y_std, f"(SD:{std_str})", ha='left', va='center', 
                                 fontsize=std_fontsize, color='#555555', fontstyle='italic')
 
         fig.suptitle(group["title"], fontsize=26, fontweight='bold', y=1.03)
