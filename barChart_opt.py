@@ -231,18 +231,19 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # [模式切换] : 'loss' 或 'optimizer' 或者 'xiaorong'
-    PLOT_MODE = 'loss' 
+    PLOT_MODE = 'xiaorong' 
 
     IMG_BASE_PATH = os.path.join(BASE_PATH, 'image', f'{PLOT_MODE}_metrics_{timestamp}')
     os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
     
     if PLOT_MODE == 'xiaorong':
         EXPERIMENTS_TO_PLOT = {
-            'Baseline(BCE + Adam)': "Adam_wd_1e-05[",          
-            'BCE + AdamW': "AdamW_wd_1e-05[", 
-            'TverskyHD + Adam':'TverskyHD(a0.3_b0.7w0.8_0.2)_Single[',  
-            'TverskyHD + AdamW': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
-            'Combo': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
+            'Baseline': "Adam_wd_1e-05[",          
+            'BCE+AdamW': "AdamW_wd_1e-05[", 
+            'BCE+AdamW+Aug': "BCEDiceLoss_Aug[", 
+            'TverskyHD+Adam':'TverskyHD(a0.3_b0.7w0.8_0.2)_Single[',  
+            'TverskyHD+AdamW': "TverskyHD(a0.3_b0.7w0.8_0.2)[", 
+            'Full Method': "TverskyHD(a0.3_b0.7w0.8_0.2)_Aug[",
         }
         file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
         all_results = parse_evaluation_file(file_path)
