@@ -148,8 +148,10 @@ if __name__ == '__main__':
         # {"name": "AdamW_wd_1e-05[Seed_48]"},
         # {"name": "DiceLoss[Seed_48]"},
         # {"name": "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]"},
-        {"name": "BCEDiceLoss[Seed_48]_Aug"},
-        {"name": "BCEDiceLoss[Seed_49]_Aug"},
+        # {"name": "BCEDiceLoss[Seed_48]_Aug"},
+        # {"name": "BCEDiceLoss[Seed_49]_Aug"},
+        {"name": "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Aug"},
+        {"name": "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_49]_Aug"},
         # 在这里按需增减你想算的模型文件夹名字...
     ]
     
