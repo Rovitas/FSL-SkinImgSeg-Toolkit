@@ -127,43 +127,46 @@ if __name__ == "__main__":
     RESULTS_ROOT = r"D:\Work\Python\_MSDT\saved_results"
     SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img"
     MAX_OUTPUT_IMAGES = None 
+    TARGET_IMAGE_IDS = None
     
-    IMG_MODE = 'optimizer'  
+    IMG_MODE = 'loss'  
 
     if IMG_MODE.lower() == 'optimizer':
         EXPERIMENTS_TO_COMPARE = {
-        'Adam': "Adam_wd_1e-05[Seed_50]",          
-        'AdamW': "AdamW_wd_1e-05[Seed_50]",              
+            'Adam': "Adam_wd_1e-05[Seed_50]",          
+            'AdamW': "AdamW_wd_1e-05[Seed_50]",              
         }
         SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Adam-AdamW')  
-        TARGET_IMAGE_IDS = ['IMD003', 'IMD390', 'IMD424']
+        # TARGET_IMAGE_IDS = ['IMD003', 'IMD390', 'IMD424']
         LAYOUT_ROWS = 1  
         LAYOUT_COLS = 3 
     elif IMG_MODE.lower() == 'loss':
         EXPERIMENTS_TO_COMPARE = {   
-        'BCE': "AdamW_wd_1e-05[Seed_50]",                  
-        'Dice': "DiceLoss[Seed_49]",
-        'Focal': "FocalLoss(a0.25_g2)[Seed_49]",
-        'Tversky': "TverskyLoss(a0.3_b0.7)[Seed_50]",
-        # 'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)[Seed_48]",
-        'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]",       
+            'BCE': "AdamW_wd_1e-05[Seed_50]",                  
+            'Dice': "DiceLoss[Seed_49]",
+            'Focal': "FocalLoss(a0.25_g2)[Seed_49]",
+            'Tversky': "TverskyLoss(a0.3_b0.7)[Seed_50]",
+            # 'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)[Seed_48]",
+            'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]",       
         }
         SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Losses_Comparison')
-        TARGET_IMAGE_IDS = ['IMD003', 'IMD044', 'IMD090'] 
+        # TARGET_IMAGE_IDS = ['IMD003', 'IMD044', 'IMD090'] 
         LAYOUT_ROWS = 2  
         LAYOUT_COLS = 3 
         
     elif IMG_MODE.lower() == 'xiaorong':
         EXPERIMENTS_TO_COMPARE = {
             'Baseline': "Adam_wd_1e-05[Seed_50]",          
-            'AdamW': "AdamW_wd_1e-05[Seed_50]",              
-            'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single",
-            'AdamW + TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]"
+            'BCE+AdamW': "AdamW_wd_1e-05[Seed_50]", 
+            'BCE+AdamW+Aug': "BCEDiceLoss[Seed_48]_Aug", 
+            'TverskyHD+Adam':'TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single',  
+            'TverskyHD+AdamW': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]", 
+            'Full Method': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_49]_Aug",
         }
         SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'XIAORONG')
-        TARGET_IMAGE_IDS = ['IMD147', 'IMD284', 'IMD424']
+        # TARGET_IMAGE_IDS = ['IMD147', 'IMD284', 'IMD424']
         LAYOUT_ROWS = 2  
-        LAYOUT_COLS = 3 
+        LAYOUT_COLS = 4 
     else:
         print(f"⚠️ Unknown mode: {IMG_MODE}")   
 
