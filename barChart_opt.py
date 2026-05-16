@@ -40,7 +40,7 @@ def parse_evaluation_file(file_path):
                             metrics[metric_name] = np.nan  
                 results[exp_name] = metrics
     except Exception as e:
-        print(f"❌ 读取 CSV 文件出错 {file_path}: {e}")
+        print(f"❌ [读取 CSV 文件出错]: {file_path}\n[错误信息]: {e}")
     return results
 
 # ================= 2. 数据计算模块 =================
