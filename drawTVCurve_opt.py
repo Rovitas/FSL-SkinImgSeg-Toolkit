@@ -22,63 +22,156 @@ def parse_log_file(log_path):
                 val_losses.append(float(losses.group(2)))
     return epochs, train_losses, val_losses
 
-def draw_crave(dicts, smooth_method='ewma', train_a=0.3, val_a=0.3, save_path=None, figsize=(12, 6), show_plot=True):
-    plt.figure(figsize=figsize)
-    colors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf']
+def draw_crave(dicts, smooth_method='ewma', train_a=0.3, val_a=0.3, save_path=None, show_plot=True):
+    # --- 颜色配置 ---
+    # 为不同的 WD 配置分配颜色
+    wd_colors = {
+        '0': '#e41a1c',       # 红色 - WD=0
+        '1e-5': '#377eb8',    # 蓝色 - WD=1e-5
+        '5e-5': '#4daf4a',    # 绿色 - WD=5e-5
+        '1e-4': '#984ea3'     # 紫色 - WD=1e-4
+    }
     
-    for idx, (exp_name, log_paths) in enumerate(dicts.items()):
-        all_train_losses, all_val_losses = [], []
-        
-        for log_path in log_paths:
-            if not os.path.exists(log_path):
-                continue
-            _, train_l, val_l = parse_log_file(log_path)
-            all_train_losses.append(train_l)
-            all_val_losses.append(val_l)
-            
-        if not all_train_losses: continue
-        max_epochs = max(len(l) for l in all_train_losses)
-        
-        # 长度对齐与均值计算
-        padded_trains = [l + [l[-1]] * (max_epochs - len(l)) for l in all_train_losses]
-        padded_vals = [l + [l[-1]] * (max_epochs - len(l)) for l in all_val_losses]
-        
-        avg_train = np.mean(padded_trains, axis=0)
-        avg_val = np.mean(padded_vals, axis=0)
-        epochs = np.arange(1, max_epochs + 1)
-        
-        # 平滑处理
-        if smooth_method == 'ewma':
-            train_smooth = smooth_loss_ewma(avg_train, alpha=train_a)
+    # --- 提取并整理数据 ---
+    # 我们将数据整理为 {优化器: {wd值: [[loss1, loss2...], ...]}}
+    data_dict = {'Adam': {}, 'AdamW': {}}
+    
+    for exp_name, log_paths in dicts.items():
+        # 判断优化器类型
+        if exp_name.startswith('AdamW'):
+            opt = 'AdamW'
+            # 提取 WD 值 (例如 "AdamW + WD=1e-5" -> '1e-5')
+            wd_match = re.search(r'WD[=:]([0-9e\-.]+)', exp_name)
+            wd_key = wd_match.group(1) if wd_match else '0'
+        elif 'Adam' in exp_name:
+            opt = 'Adam'
+            wd_match = re.search(r'WD[=:]([0-9e\-.]+)', exp_name)
+            wd_key = wd_match.group(1) if wd_match else '0'
         else:
-            train_smooth = avg_train
+            continue
+
+        # 初始化列表
+        if wd_key not in data_dict[opt]:
+            data_dict[opt][wd_key] = {'train': [], 'val': []}
+
+        # 收集日志数据
+        for log_path in log_paths:
+            full_path = os.path.join(r"D:\Work\Python\_MSDT\logs_summary", log_path)
+            if not os.path.exists(full_path):
+                print(f"路径不存在，已跳过: {full_path}")
+                continue
+                
+            eps, train_l, val_l = parse_log_file(full_path)
+            if train_l: # 确保有数据
+                data_dict[opt][wd_key]['train'].append(train_l)
+            if val_l:
+                data_dict[opt][wd_key]['val'].append(val_l)
+
+    # --- 创建画布 ---
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10), constrained_layout=True)
+    plt.subplots_adjust(wspace=0.3, hspace=0.3) # 调整间距
+
+    # --- 定义绘图逻辑 ---
+    def plot_subplot(ax, opt_data, loss_type, title):
+        ax.set_title(title, fontsize=18, fontweight='bold', pad=15)
+        ax.set_xlabel('Epoch', fontsize=12)
+        ax.set_ylabel('Loss', fontsize=12)
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        # 遍历该优化器下的所有 WD 配置
+        for wd, losses_dict in opt_data.items():
+            all_losses = losses_dict[loss_type]
+            if not all_losses:
+                continue
+                
+            # 1. 长度对齐
+            max_epochs = max(len(l) for l in all_losses)
+            padded_losses = []
+            for l in all_losses:
+                if len(l) < max_epochs:
+                    # 填充最后一个值
+                    padded_losses.append(l + [l[-1]] * (max_epochs - len(l)))
+                else:
+                    padded_losses.append(l)
             
-        label = f"{exp_name} (Train)" if len(all_train_losses) == 1 else f"{exp_name} (Train, avg)"
-        plt.plot(epochs, train_smooth, label=label, color=colors[idx % len(colors)], linestyle='-', linewidth=2.0, alpha=0.9)
+            # 2. 计算均值
+            avg_loss = np.mean(padded_losses, axis=0)
+            epochs = np.arange(1, max_epochs + 1)
+            
+            # 3. 平滑
+            if smooth_method == 'ewma':
+                smoothed = smooth_loss_ewma(avg_loss, alpha=train_a if loss_type=='train' else val_a)
+            else:
+                smoothed = avg_loss
+
+            # 4. 绘制曲线
+            color = wd_colors.get(wd, '#000000') # 默认黑色
+            label = f'WD={wd}'
+            ax.plot(epochs, smoothed, label=label, color=color, linewidth=2.5, alpha=0.9)
+
+        ax.legend(title='Weight Decay', fontsize=18, title_fontsize=20)
+
+    # --- 绘制四张子图 ---
     
-    plt.xlabel('Epoch', fontsize=12, fontweight='bold')
-    plt.ylabel('Loss', fontsize=12, fontweight='bold')
-    plt.title('Training Loss Curves', fontsize=14, fontweight='bold')
-    plt.grid(True, linestyle='--', alpha=0.7, linewidth=0.8)
-    plt.legend(fontsize=10, loc='upper right', frameon=True, fancybox=True, shadow=True)
-    plt.tight_layout()
+    # 1. Adam - Train
+    plot_subplot(axes[0, 0], data_dict['Adam'], 'train', 'Adam: Training Loss')
+    
+    # 2. AdamW - Train
+    plot_subplot(axes[0, 1], data_dict['AdamW'], 'train', 'AdamW: Training Loss')
+    
+    # 3. Adam - Validation
+    plot_subplot(axes[1, 0], data_dict['Adam'], 'val', 'Adam: Validation Loss')
+    
+    # 4. AdamW - Validation
+    plot_subplot(axes[1, 1], data_dict['AdamW'], 'val', 'AdamW: Validation Loss')
+
+    # plt.suptitle('Optimizer Comparison (Adam vs AdamW) with Different Weight Decay', fontsize=16, fontweight='bold', y=0.98)
     
     if save_path:
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
+        print(f"✅ Saved plot to: {save_path}")
     if show_plot: plt.show()
     else: plt.close()
 
 if __name__ == '__main__':
     experiments = {
         "Baseline (Adam + WD=0)": [
-            r"D:\Work\Python\_MSDT\saved_results\Baseline_seed_38\Baseline_seed_38.log",
-            r"D:\Work\Python\_MSDT\saved_results\Baseline_seed_39\Baseline_seed_39.log",
-            r"D:\Work\Python\_MSDT\saved_results\Baseline_seed_40\Baseline_seed_40.log",
-            r"D:\Work\Python\_MSDT\saved_results\Baseline_seed_48\Baseline_seed_48.log",
+            r"Baseline_seed_38.log",
+            r"Baseline_seed_39.log",
+            r"Baseline_seed_40.log",
+            r"Baseline_seed_48.log",
         ],
         "Adam + WD=1e-5": [
-            r"D:\Work\Python\_MSDT\saved_results\Adam_wd_1e-05[Seed_48]\Adam_wd_1e-05[Seed_48].log",
-            r"D:\Work\Python\_MSDT\saved_results\Adam_wd_1e-05[Seed_50]\Adam_wd_1e-05[Seed_50].log",
+            r"Adam_wd_1e-05[Seed_48].log",
+            r"Adam_wd_1e-05[Seed_50].log",
+        ],
+        "Adam + WD=5e-5": [
+            r"Adam_wd_5e-05[Seed_48].log",
+            r"Adam_wd_5e-05[Seed_49].log",
+        ],
+        "Adam + WD=1e-4": [
+            r"Adam_wd_1e-04[Seed_48].log",
+            r"Adam_wd_1e-04[Seed_49].log",
+        ],
+        "AdamW + WD=0": [
+            r"AdamW_wd_0[Seed_48].log",
+            r"AdamW_wd_0[Seed_49].log",
+            r"AdamW_wd_0[Seed_50].log",
+        ],
+        "AdamW + WD=1e-5": [
+            r"AdamW_wd_1e-05[Seed_48].log",
+            r"AdamW_wd_1e-05[Seed_49].log",
+            r"AdamW_wd_1e-05[Seed_50].log",
+        ],
+        "AdamW + WD=5e-5": [
+            r"AdamW_wd_5e-05[Seed_48].log",
+            r"AdamW_wd_5e-05[Seed_49].log",
+            r"AdamW_wd_5e-05[Seed_50].log",
+        ],
+        "AdamW + WD=1e-4": [
+            r"AdamW_wd_1e-04[Seed_48].log",
+            r"AdamW_wd_1e-04[Seed_49].log",
+            r"AdamW_wd_1e-04[Seed_50].log",
         ],
         # 可视情况解开其他配置...
     }
