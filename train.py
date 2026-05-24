@@ -364,8 +364,7 @@ if __name__ == '__main__':
     }
     # main(run_type="debug", crit="tversky_hd", seed=48, loss_params=my_loss_param)
     # main(opt="adamw", crit="tversky_hd", seed=48, loss_params=my_loss_param)
-    main(opt="adam", crit="bce", seed=48, loss_params=my_loss_param, use_aug=True)
-    main(opt="adamw", crit="tversky_hd", seed=48, loss_params=my_loss_param, use_aug=True)
-    main(opt="adam", crit="bce", seed=49, loss_params=my_loss_param, use_aug=True)
-    main(opt="adamw", crit="tversky_hd", seed=49, loss_params=my_loss_param, use_aug=True)
+    # main(opt="adam", crit="bce", seed=48, loss_params=my_loss_param, use_aug=True)
+    main(opt="adamw", crit="tversky_hd", seed=48, loss_params={"tversky_hd":{'alpha':0.3, 'beta':0.7, 'w_tv':0.6, 'w_hd':0.4}})
+    main(opt="adamw", crit="tversky_hd", seed=48, loss_params={"tversky_hd":{'alpha':0.3, 'beta':0.7, 'w_tv':0.7, 'w_hd':0.3}})
     pass
