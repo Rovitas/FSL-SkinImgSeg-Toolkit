@@ -18,6 +18,8 @@ import time
 
 import random
 import numpy as np
+import yaml # [新增] 用于读取任务队列
+from tqdm import tqdm  # [新增] 进度条库
 
 def set_seed(seed=42):
     """设置全局随机种子，确保可复现性"""
@@ -40,25 +42,13 @@ def create_unique_dir(base_dir):
             if counter == 0:
                 new_dir = base_dir + suffix
             else:
-                new_dir = base_dir + suffix + str(counter)
+                new_dir = f"{base_dir}{suffix}{counter}"
             
             if not os.path.exists(new_dir):
                 os.makedirs(new_dir)
                 return new_dir
             counter += 1
 
-def validate_model(model, val_loader, criterion, device):
-    """单轮验证函数"""
-    model.eval()
-    val_loss = 0.0
-    with torch.no_grad():
-        for inputs, labels in val_loader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            val_loss += loss.item() * inputs.size(0)
-    return val_loss / len(val_loader.dataset)
 
 def train_model(
     model,
@@ -124,14 +114,16 @@ def train_model(
     # ===== 加载预训练模型（支持续训）=====
     start_epoch = 0
     best_val_loss = float('inf')
+    best_epoch = -1
     if resume_path and os.path.exists(resume_path):
         if resume_path is not None:
             log(f"🔄 Loading checkpoint from: {os.path.abspath(resume_path)}")
         checkpoint = torch.load(resume_path, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint.get('epoch', 0) + 1
+        start_epoch = checkpoint['epoch'] + 1
         best_val_loss = checkpoint.get('best_val_loss', best_val_loss) 
+        best_epoch = checkpoint.get('best_epoch', -1) # [新增]
         log(f"▶ Resuming training from epoch {start_epoch}")
     else:
         log("🆕 Starting training from scratch")
@@ -139,9 +131,8 @@ def train_model(
     
     model = model.to(device)
     train_losses = []
+    val_losses = []
     start_time = time.time()
-    best_epoch = -1
-    
     try:
         for epoch in range(start_epoch, num_epochs):
             epoch_start = time.time()
@@ -150,52 +141,72 @@ def train_model(
             model.train()
             running_loss = 0.0
             
-            for inputs, labels in train_loader:
-                inputs = inputs.to(device)
+            # [修改] 使用 tqdm 包装 train_loader
+            train_pbar = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{num_epochs}] Train", leave=False)
+            for i, (images, labels) in enumerate(train_pbar):
+                images = images.to(device)
                 labels = labels.to(device)
-                
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                
                 optimizer.zero_grad()
+                outputs = model(images)
+                loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
+                running_loss += loss.item() * images.size(0)
                 
-                running_loss += loss.item() * inputs.size(0)
-            
-            epoch_loss = running_loss / len(train_loader.dataset)
-            val_loss = validate_model(model, val_loader, criterion, device)
+                # [修改] 在进度条右侧实时显示当前 batch 的 Loss
+                train_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+
+            epoch_train_loss = running_loss / len(train_loader.dataset)
+
+            # 验证过程
+            model.eval()
+            val_running_loss = 0.0
+            with torch.no_grad():
+                # [修改] 使用 tqdm 包装 val_loader
+                val_pbar = tqdm(val_loader, desc=f"Epoch [{epoch+1}/{num_epochs}] Val  ", leave=False)
+                for images, labels in val_pbar:
+                    images = images.to(device)
+                    labels = labels.to(device)
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                    val_running_loss += loss.item() * images.size(0)
+                    val_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+
+            epoch_val_loss = val_running_loss / len(val_loader.dataset)
+            val_losses.append(epoch_val_loss)
+
             epoch_duration = time.time() - epoch_start
-            train_losses.append(epoch_loss)
+            train_losses.append(epoch_train_loss)
+
+            log(f" → Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f} | Epoch time: {epoch_duration:.2f}s")
             
-            log(f" → Train Loss: {epoch_loss:.6f} | Val Loss: {val_loss:.6f} | Epoch time: {epoch_duration:.2f}s")
+            if epoch_val_loss < best_val_loss:
+                best_val_loss = epoch_val_loss
+                best_epoch = epoch + 1
+                best_model_path = os.path.join(models_dir, 'best_model.pth')
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'val_loss': epoch_val_loss,
+                    'best_val_loss': best_val_loss,
+                    'best_epoch': best_epoch, # [新增]
+                }, best_model_path)
+                log(f"🏆 New best model saved (val_loss={best_val_loss:.6f}) → best_model.pth: {best_model_path}")
             
             # 每10轮或最后一轮保存模型
             if (epoch + 1) % 10 == 0 or epoch == num_epochs - 1:
-                model_path = os.path.join(models_dir, f"model_epoch_{epoch+1}.pth")
+                checkpoint_path = os.path.join(models_dir, f"model_epoch_{epoch+1}.pth")
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': epoch_loss,
-                    'val_loss': val_loss,
+                    'loss': epoch_train_loss,
+                    'val_loss': epoch_val_loss,
                     'best_val_loss': best_val_loss,
-                }, model_path)
+                    'best_epoch': best_epoch, # [新增]
+                }, checkpoint_path)
                 log(f"💾 Saved model: model_epoch_{epoch+1}.pth")
-
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_epoch = epoch + 1
-                best_model_path = os.path.join(models_dir, "best_model.pth")
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'val_loss': val_loss,
-                    'best_val_loss': best_val_loss,
-                }, best_model_path)
-                log(f"🏆 New best model saved (val_loss={best_val_loss:.6f}) → best_model.pth")
     
     except KeyboardInterrupt:
         log("⚠️ Training interrupted by user (Ctrl+C)")
@@ -205,16 +216,24 @@ def train_model(
         raise
     
     finally:
-                # 保存 loss 曲线
+        # 绘制并保存损失曲线
         if train_losses:
             plt.figure(figsize=(10, 6))
-            plt.plot(train_losses, label='Train Loss', linewidth=2)
-            plt.xlabel('Epoch')
+            # 动态获取实际跑了多少轮，防止中途报错或人为中断时画图崩溃
+            actual_epochs = len(train_losses)
+            x_axis = range(start_epoch + 1, start_epoch + actual_epochs + 1)
+            plt.plot(x_axis, train_losses, label='Train Loss', linewidth=2)
+
+        # 只有当 val_losses 也有数据时才画它（防止只跑了train没跑val就断了）
+            if val_losses and len(val_losses) == actual_epochs:
+                plt.plot(x_axis, val_losses, label='Validation Loss', linewidth=2)
+
+            plt.xlabel('Epochs')
             plt.ylabel('Loss')
-            plt.title('Training Loss Curve')
+            plt.title('Training and Validation Loss Curve')
             plt.grid(True)
             plt.legend()
-            
+
             plt.savefig(plot_path, dpi=300, bbox_inches='tight')
             plt.close()
 
@@ -237,24 +256,27 @@ def train_model(
         # =========================
 
 
-def main(run_type="train_with_pt", opt="default", crit="default", set_decay=1e-5, 
-        loss_params = {'focal':{'alpha':0.25, 'gamma':2} ,'tversky':{'alpha':0.3, 'beta':0.7}},
-        resume_path=None, seed=48, epoch=50, use_aug=False):
-
+def main(run_type="train_with_pt", opt="default", crit="default", set_decay=1e-5,
+        loss_params = {
+            'focal': {'alpha': 0.25, 'gamma': 2},
+            'tversky': {'alpha': 0.3, 'beta': 0.7},
+            'tversky_hd': {'alpha': 0.3, 'beta': 0.7, 'w_tv': 0.8, 'w_hd': 0.2}
+        },
+        resume_path=None, seed=48, epochs=50, use_aug=False):
+    
+    set_seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = UNet()
     BASE_DIR = r"d:\Work\Python\_MSDT"
     TASK_NAME = None
-    EPOCH = epoch
-    set_seed(seed)
-    
+    EPOCHS = epochs
+    model = UNet().to(device)
     #   Adam Vs AdamW
     if opt.lower() in ("adamw", "default"):
         optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=set_decay)
     elif opt.lower() == "adam":
         optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=set_decay)
     else:
-        optimizer = optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=set_decay)
+        optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=set_decay)
         print(f"⚠️ Unknown type of optimizer: {opt}, using AdamW as default.")
     if opt.lower() != "default":
         if set_decay == 0:
@@ -263,9 +285,9 @@ def main(run_type="train_with_pt", opt="default", crit="default", set_decay=1e-5
             TASK_NAME = f"{str(optimizer).split(' (')[0]}_wd_{set_decay:.0e}[Seed_{seed}]"
 
     #   Loss Functions
-    if crit.lower() == "bce" or crit.lower() == "default":
+    if crit.lower() in ("bce", "default"):
         criterion = nn.BCEWithLogitsLoss()
-        TASK_NAME = f"BCEDiceLoss[Seed_{seed}]"
+        TASK_NAME = f"BCELoss[Seed_{seed}]"
     elif crit.lower() == "dice":
         criterion = smp.losses.DiceLoss(mode="binary")
         TASK_NAME = f"{str(criterion).split('(')[0]}[Seed_{seed}]"
@@ -296,6 +318,7 @@ def main(run_type="train_with_pt", opt="default", crit="default", set_decay=1e-5
             0.5 * smp.losses.DiceLoss(mode="binary")(pred, target) +
             0.5 * nn.BCEWithLogitsLoss()(pred, target)
         )
+        TASK_NAME = f"BCEDiceLoss[Seed_{seed}]"
     else:
         criterion = nn.BCEWithLogitsLoss()
         print(f"⚠️ Unknown criterion: {crit}, using BCEWithLogitsLoss as default.")   
@@ -311,15 +334,15 @@ def main(run_type="train_with_pt", opt="default", crit="default", set_decay=1e-5
         # 调试代码用的极少量数据
         TRAIN_DIR = r"d:\Work\Python\_MSDT\imagesT"
         VAL_DIR = r"d:\Work\Python\_MSDT\imagesT"
-        TASK_NAME += "(Debug)"
-        EPOCH = 3 
+        TASK_NAME = f"(Debug){TASK_NAME}"
+        EPOCHS = 3 
     elif run_type.lower() == "train_with_pt":
         if use_aug:
             PT_TRAIN = r"d:\Work\Python\_MSDT\dataset\train_aug.pt"
-            print("Using augmentation, loading train_aug.pt")
+            print("Using augmentation, loading 'train_aug.pt'")
         else:
             PT_TRAIN = r"d:\Work\Python\_MSDT\dataset\train.pt"
-            print("Using original, loading train.pt")
+            print("Using original, loading 'train.pt'")
         PT_VAL = r"d:\Work\Python\_MSDT\dataset\val.pt"
         transform = transforms.Compose([transforms.Resize((256, 256))])
         train_dataset = MYDataset_From_Pt(pt_file=PT_TRAIN, transform=transform)
@@ -347,7 +370,7 @@ def main(run_type="train_with_pt", opt="default", crit="default", set_decay=1e-5
         optimizer=optimizer,
         train_loader=train_loader,
         val_loader=val_loader,
-        num_epochs=EPOCH,
+        num_epochs=EPOCHS,
         device=device,
         base_dir=BASE_DIR,
         resume_path=resume_path,
@@ -355,16 +378,115 @@ def main(run_type="train_with_pt", opt="default", crit="default", set_decay=1e-5
         task_name=TASK_NAME
     )
 
+# ================== [新增] 动态任务队列管理器 ==================
+def get_next_task(queue_file="tasks.yml", history_file="tasks_history.yml"):
+    """读取并弹出队列中的第一个任务，同时自动备份到历史档案中"""
+    if not os.path.exists(queue_file):
+        return None
+    
+    try:
+        with open(queue_file, 'r', encoding='utf-8') as f:
+            tasks = yaml.safe_load(f)
+            
+        if not tasks or len(tasks) == 0:
+            return None
+            
+        # 1. 弹出第一个任务
+        current_task = tasks.pop(0)
+        
+        # 2. 更新待办列表 (覆盖写入 tasks.yml)
+        with open(queue_file, 'w', encoding='utf-8') as f:
+            yaml.dump(tasks, f, allow_unicode=True, default_flow_style=False)
+            
+        # 3. 自动备份到历史记录档案
+        # 给任务盖个时间戳印章，方便以后查阅
+        archive_task = current_task.copy()
+        archive_task["_executed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        history = []
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r', encoding='utf-8') as hf:
+                    loaded_history = yaml.safe_load(hf)
+                    if loaded_history is not None:  # 🟢 确保文件不为空
+                        history = loaded_history
+            except yaml.YAMLError as inner_exc:
+                print(f"详细报错信息: \n{inner_exc}")
+                # 如果历史文件为空或损坏，新建一个列表
+                
+        history.append(archive_task)
+        
+        # 写入历史文件
+        with open(history_file, 'w', encoding='utf-8') as hf:
+            yaml.dump(history, hf, allow_unicode=True, default_flow_style=False)
+            
+        return current_task
+        
+    except yaml.YAMLError as exc:
+        print(f"⚠️ {queue_file} 格式错误，请检查 YAML 格式！程序将暂停 10 秒后重试...")
+        print(f"详细报错信息: \n{exc}")
+        time.sleep(10)
+        return get_next_task(queue_file, history_file)
+    except Exception as e:
+        print(f"⚠️ 读取任务队列失败: \n{e}")
+        return None
+
 
 if __name__ == '__main__':
-    my_loss_param = {
-        'focal':{'alpha':0.25, 'gamma':2} 
-        ,"tversky":{'alpha':0.3, 'beta':0.7}
-        ,"tversky_hd":{'alpha':0.3, 'beta':0.7, 'w_tv':0.8, 'w_hd':0.2}
-    }
-    # main(run_type="debug", crit="tversky_hd", seed=48, loss_params=my_loss_param)
-    # main(opt="adamw", crit="tversky_hd", seed=48, loss_params=my_loss_param)
-    # main(opt="adam", crit="bce", seed=48, loss_params=my_loss_param, use_aug=True)
-    main(opt="adamw", crit="tversky_hd", seed=48, loss_params={"tversky_hd":{'alpha':0.3, 'beta':0.7, 'w_tv':0.6, 'w_hd':0.4}})
-    main(opt="adamw", crit="tversky_hd", seed=48, loss_params={"tversky_hd":{'alpha':0.3, 'beta':0.7, 'w_tv':0.7, 'w_hd':0.3}})
-    pass
+    QUEUE_FILE = r"d:\Work\Python\_MSDT\logs\tasks.yml"
+    HISTORY_FILE = r"d:\Work\Python\_MSDT\logs\tasks_history.yml"
+
+    # 如果没有找到 tasks.yml，自动生成一个模板文件
+    if not os.path.exists(QUEUE_FILE):
+        tasks_yml_template = """# ==========================================
+# 实验任务配置清单 (YAML格式支持直接写注释)
+# ==========================================
+# 备忘录 / 参数说明：
+# run_type    : 不填默认"train_with_pt"，可选 "train_with_pt", "train_with_img" (正式跑配置的epochs) 或 "debug" (快速测试3轮, 忽略外部传参的epochs)
+# crit        : 损失函数，不填默认"bce"，可选 "bce", "dice", "focal", "tversky", "tversky_hd"
+# use_aug     : 不填默认"False"，True (开启数据增强) 或 False (关闭)
+# resume_path : 断点续训模型路径 (绝对路径)，如果没有可以不填
+# ==========================================
+
+# 示例 1: 这是一个用于调试的短任务
+- run_type: debug
+  crit: dice
+  seed: 48
+  use_aug: False
+  epochs: 3
+
+# 示例 2: 这是一个正式跑 50 轮的 tversky_hd 实验
+- run_type: train_with_pt
+  crit: tversky_hd
+  seed: 48
+  epochs: 50
+  loss_params: {'tversky_hd': {'alpha': 0.3, 'beta': 0.7, 'w_tv': 0.8, 'w_hd': 0.2}}
+"""
+
+        with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
+            f.write(tasks_yml_template)
+        print(f"📝 未检测到 {QUEUE_FILE}，已自动生成模板文件！")
+        print("请打开 tasks.yml 修改为你想要的任务，然后重新运行代码。")
+        exit(0)
+
+    print(f"📂 任务监控已启动。执行历史将自动归档至: {HISTORY_FILE}")
+
+    # 循环监听并执行任务队列
+    while True:
+        task_kwargs = get_next_task(QUEUE_FILE, HISTORY_FILE)
+        
+        if task_kwargs is None:
+            print("\n✅ 所有任务已执行完毕！任务队列 (tasks.yml) 为空。")
+            break
+            
+        print("\n" + "="*50)
+        print("▶️ 加载到新任务，参数如下：")
+        for k, v in task_kwargs.items():
+            print(f"   {k}: {v}")
+        print("="*50 + "\n")
+        
+        # 执行主训练任务
+        main(**task_kwargs)
+        
+        # 任务之间稍微暂停 2 秒，缓冲一下释放显存
+        time.sleep(2)
