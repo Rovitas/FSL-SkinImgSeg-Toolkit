@@ -230,8 +230,8 @@ if __name__ == "__main__":
     BASE_PATH = r"D:\Work\Python\_MSDT\calcuMetrics"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # [模式切换] : 'loss' 或 'optimizer' 或者 'xiaorong'
-    PLOT_MODE = 'xiaorong' 
+    # [模式切换] : 'loss', 'optimizer', 'xiaorong', 'tverskyhd_pre'
+    PLOT_MODE = 'tverskyhd_pre' 
 
     IMG_BASE_PATH = os.path.join(BASE_PATH, 'image', f'{PLOT_MODE}_metrics_{timestamp}')
     os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
@@ -249,8 +249,22 @@ if __name__ == "__main__":
         all_results = parse_evaluation_file(file_path)
         averaged_data = calculate_loss_averages(all_results, EXPERIMENTS_TO_PLOT)
 
-        create_split_reference_charts(averaged_data, base_title="Ablation Analysis", save_base_path=IMG_BASE_PATH)    
-    
+        create_split_reference_charts(averaged_data, base_title="Ablation Analysis", save_base_path=IMG_BASE_PATH) 
+
+    elif PLOT_MODE == 'tverskyhd_pre':   
+        EXPERIMENTS_TO_PLOT = {
+            'TverskyHD 5:5': "TverskyHD(a0.3_b0.7w0.5_0.5)[", 
+            'TverskyHD 6:4': "TverskyHD(a0.3_b0.7w0.6_0.4)[", 
+            'TverskyHD 7:3': "TverskyHD(a0.3_b0.7w0.7_0.3)[", 
+            'TverskyHD 8:2': "TverskyHD(a0.3_b0.7w0.8_0.2)[", 
+            'TverskyHD 9:1': "TverskyHD(a0.3_b0.7w0.9_0.1)[", 
+        }
+        file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
+        all_results = parse_evaluation_file(file_path)
+        averaged_data = calculate_loss_averages(all_results, EXPERIMENTS_TO_PLOT)
+
+        create_split_reference_charts(averaged_data, base_title="TverskyHD Pre Analysis Comparison", save_base_path=IMG_BASE_PATH) 
+
     elif PLOT_MODE == 'loss':
         EXPERIMENTS_TO_PLOT = {        
             'BCE': "AdamW_wd_1e-05[",              
