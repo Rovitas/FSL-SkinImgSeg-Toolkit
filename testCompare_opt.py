@@ -23,6 +23,10 @@ GT_CONTOUR_ALPHA = 0.7
 SHOW_GT_SUBPLOT = False       # 【新增开关】: 设为 False 则隐藏单独的 Ground Truth 格子，只在其他图上显示绿线
 # ============================================================
 
+#修改RC参数，使其支持中文
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False
+
 # 模块 1: 模型加载引擎 (精确匹配)
 def load_selected_models(experiments_dict, results_base_dir):
     models = {}
@@ -42,7 +46,7 @@ def load_selected_models(experiments_dict, results_base_dir):
 def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_path, 
                                 n_rows, n_cols, show_gt=SHOW_GT_SUBPLOT):
     # 【核心修改】：根据开关决定是否把 GT 单独作为一个图放进列表中
-    items = [('Original Image', np.clip(original_img, 0, 1), None)]
+    items = [('原始图像', np.clip(original_img, 0, 1), None)]
     
     if show_gt:
         items.append(('Ground Truth', ground_truth, 'gray'))
@@ -71,7 +75,7 @@ def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_pat
         else:
             ax.axis('off')
             
-    gt_patch = mpatches.Patch(color=GT_CONTOUR_COLOR, label='Ground Truth Contour')
+    gt_patch = mpatches.Patch(color=GT_CONTOUR_COLOR, label='专家标注的真实边界GT的投影')
     
     # 【核心修复】：使用强力参数压缩子图之间的水平 (w_pad) 和垂直 (h_pad) 间距
     plt.tight_layout(w_pad=0.2, h_pad=1.0) 
@@ -121,23 +125,13 @@ def run_qualitative_pipeline(test_loader, models_dict, save_dir, max_samples=Non
             print(f"✅ 生成成功: comparison_{sample_name}.png")
             processed_count += 1
 
-# ================= 核心控制入口 =================
-if __name__ == "__main__":
-    TEST_DIR = r"d:\Work\Python\_MSDT\images_split\test"
-    RESULTS_ROOT = r"D:\Work\Python\_MSDT\saved_results"
-    SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img"
-    MAX_OUTPUT_IMAGES = None 
-    TARGET_IMAGE_IDS = None
-    
-    IMG_MODE = 'loss'  
-
-    if IMG_MODE.lower() == 'optimizer':
+def main(mode, test_img, result_root, save_folder, max_amount=None, choose_img_id=None):
+    if mode.lower() == 'optimizer':
         EXPERIMENTS_TO_COMPARE = {
-            'Adam': "Adam_wd_1e-05[Seed_50]",          
-            'AdamW': "AdamW_wd_1e-05[Seed_50]",              
+            'Adam优化器': "Adam_wd_1e-05[Seed_50]",          
+            'AdamW优化器': "AdamW_wd_1e-05[Seed_50]",              
         }
-        SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Adam-AdamW')  
-        # TARGET_IMAGE_IDS = ['IMD003', 'IMD390', 'IMD424']
+        save_folder = os.path.join(save_folder, 'Adam-AdamW')  
         LAYOUT_ROWS = 1  
         LAYOUT_COLS = 3 
     elif IMG_MODE.lower() == 'loss':
@@ -149,42 +143,67 @@ if __name__ == "__main__":
             # 'TverskyHD55': "TverskyHD(a0.3_b0.7w0.5_0.5)[Seed_48]",
             'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]",       
         }
-        SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'Losses_Comparison')
-        # TARGET_IMAGE_IDS = ['IMD003', 'IMD044', 'IMD090'] 
+        save_folder = os.path.join(save_folder, 'Losses_Comparison')
+        LAYOUT_ROWS = 2  
+        LAYOUT_COLS = 3 
+    elif mode.lower() == 'tverskyhd_pre':
+        EXPERIMENTS_TO_COMPARE = {   
+            'TverskyHD 5:5': "TverskyHD(a0.3_b0.7w0.5_0.5)[Seed_49]", 
+            'TverskyHD 6:4': "TverskyHD(a0.3_b0.7w0.6_0.4)[Seed_50]", 
+            'TverskyHD 7:3': "TverskyHD(a0.3_b0.7w0.7_0.3)[Seed_49]", 
+            'TverskyHD 8:2': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]", 
+            'TverskyHD 9:1': "TverskyHD(a0.3_b0.7w0.9_0.1)[Seed_50]",    
+        }
+        save_folder = os.path.join(save_folder, 'TverskyHD_Pre')
         LAYOUT_ROWS = 2  
         LAYOUT_COLS = 3 
         
-    elif IMG_MODE.lower() == 'xiaorong':
+    elif mode.lower() == 'xiaorong':
         EXPERIMENTS_TO_COMPARE = {
-            'Baseline': "Adam_wd_1e-05[Seed_50]",          
+            '基线方法（BCE+Adam）': "Adam_wd_1e-05[Seed_50]",          
             'BCE+AdamW': "AdamW_wd_1e-05[Seed_50]", 
-            'BCE+AdamW+Aug': "BCEDiceLoss[Seed_48]_Aug", 
+            'BCE+AdamW+数据增强': "BCEDiceLoss[Seed_48]_Aug", 
             'TverskyHD+Adam':'TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single',  
             'TverskyHD+AdamW': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]", 
-            'Full Method': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_49]_Aug",
+            '完整方法（TverskyHD+AdamW+数据增强）': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_49]_Aug",
         }
-        SAVE_FOLDER = os.path.join(SAVE_FOLDER, 'XIAORONG')
-        # TARGET_IMAGE_IDS = ['IMD147', 'IMD284', 'IMD424']
+        save_folder = os.path.join(save_folder, 'XIAORONG')
         LAYOUT_ROWS = 2  
         LAYOUT_COLS = 4 
     else:
-        print(f"⚠️ Unknown mode: {IMG_MODE}")   
+        print(f"⚠️ Unknown mode: {mode}")   
 
     transform = transforms.Compose([transforms.Resize((256, 256)), transforms.ToTensor()])
-    test_set = MYDataset(base_dir=TEST_DIR, transform=transform)
+    test_set = MYDataset(base_dir=test_img, transform=transform)
     loader = DataLoader(test_set, batch_size=1, shuffle=False)
+    if choose_img_id is None: choose_img_id = ['IMD284', 'IMD410', 'IMD424']
     
     print("⏳ 正在根据配置精确加载模型...")
-    active_models = load_selected_models(EXPERIMENTS_TO_COMPARE, RESULTS_ROOT)
+    active_models = load_selected_models(EXPERIMENTS_TO_COMPARE, result_root)
     
     print(f"\n🚀 开始定性对比分析")
     run_qualitative_pipeline(
         test_loader=loader, 
         models_dict=active_models, 
-        save_dir=SAVE_FOLDER,
-        max_samples=MAX_OUTPUT_IMAGES,   
-        target_ids=TARGET_IMAGE_IDS,
+        save_dir=save_folder,
+        max_samples=max_amount,   
+        target_ids=choose_img_id,
         grid_rows=LAYOUT_ROWS,          
         grid_cols=LAYOUT_COLS           
     )
-    print(f"\n🎉 定性分析完成！请检查输出文件夹:{SAVE_FOLDER}")
+    print(f"\n🎉 定性分析完成！请检查输出文件夹:{SAVE_FOLDER}\n")
+
+
+if __name__ == "__main__":
+    TEST_DIR = r"d:\Work\Python\_MSDT\images_split\test"
+    RESULTS_ROOT = r"D:\Work\Python\_MSDT\saved_results"
+    SAVE_FOLDER = r"D:\Work\Python\_MSDT\compare_img"
+    MAX_OUTPUT_IMAGES = None 
+    TARGET_IMAGE_IDS = None
+    
+    # IMG_MODE = 'optimizer' 
+    # IMG_MODE = 'loss'
+    # IMG_MODE = 'xiaorong'  
+    IMG_MODE = 'tverskyhd_pre'
+
+    main(mode=IMG_MODE, test_img=TEST_DIR, result_root=RESULTS_ROOT, save_folder=SAVE_FOLDER, max_amount=MAX_OUTPUT_IMAGES, choose_img_id=TARGET_IMAGE_IDS)
