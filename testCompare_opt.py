@@ -46,7 +46,8 @@ def load_selected_models(experiments_dict, results_base_dir):
 def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_path, 
                                 n_rows, n_cols, show_gt=SHOW_GT_SUBPLOT):
     # 【核心修改】：根据开关决定是否把 GT 单独作为一个图放进列表中
-    items = [('原始图像', np.clip(original_img, 0, 1), None)]
+    # items = [('原始图像', np.clip(original_img, 0, 1), None)]     #中文
+    items = [('Original Image', np.clip(original_img, 0, 1), None)]     #English
     
     if show_gt:
         items.append(('Ground Truth', ground_truth, 'gray'))
@@ -75,8 +76,9 @@ def plot_qualitative_comparison(original_img, ground_truth, preds_dict, save_pat
         else:
             ax.axis('off')
             
-    gt_patch = mpatches.Patch(color=GT_CONTOUR_COLOR, label='专家标注的真实边界GT的投影')
-    
+    # gt_patch = mpatches.Patch(color=GT_CONTOUR_COLOR, label='专家标注的真实边界GT的投影') #中文
+    gt_patch = mpatches.Patch(color=GT_CONTOUR_COLOR, label='Ground Truth Contour')     #English
+
     # 【核心修复】：使用强力参数压缩子图之间的水平 (w_pad) 和垂直 (h_pad) 间距
     plt.tight_layout(w_pad=0.2, h_pad=1.0) 
     
@@ -128,8 +130,10 @@ def run_qualitative_pipeline(test_loader, models_dict, save_dir, max_samples=Non
 def main(mode, test_img, result_root, save_folder, max_amount=None, choose_img_id=None):
     if mode.lower() == 'optimizer':
         EXPERIMENTS_TO_COMPARE = {
-            'Adam优化器': "Adam_wd_1e-05[Seed_50]",          
-            'AdamW优化器': "AdamW_wd_1e-05[Seed_50]",              
+            'Adam': "Adam_wd_1e-05[Seed_50]",          
+            'AdamW': "AdamW_wd_1e-05[Seed_50]",      
+            # 'Adam优化器': "Adam_wd_1e-05[Seed_50]",          
+            # 'AdamW优化器': "AdamW_wd_1e-05[Seed_50]",        
         }
         save_folder = os.path.join(save_folder, 'Adam-AdamW')  
         LAYOUT_ROWS = 1  
@@ -160,12 +164,13 @@ def main(mode, test_img, result_root, save_folder, max_amount=None, choose_img_i
         
     elif mode.lower() == 'xiaorong':
         EXPERIMENTS_TO_COMPARE = {
-            '基线方法（BCE+Adam）': "Adam_wd_1e-05[Seed_50]",          
+            # '基线方法（BCE+Adam）': "Adam_wd_1e-05[Seed_50]", 
+            'Baseline(BCE+Adam)': "Adam_wd_1e-05[Seed_50]",         
             'BCE+AdamW': "AdamW_wd_1e-05[Seed_50]", 
-            'BCE+AdamW+数据增强': "BCEDiceLoss[Seed_48]_Aug", 
+            'BCE+AdamW+Aug': "BCEDiceLoss[Seed_48]_Aug", 
             'TverskyHD+Adam':'TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_48]_Single',  
             'TverskyHD+AdamW': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_50]", 
-            '完整方法（TverskyHD+AdamW+数据增强）': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_49]_Aug",
+            'Full(TverskyHD+AdamW+Aug)': "TverskyHD(a0.3_b0.7w0.8_0.2)[Seed_49]_Aug",
         }
         save_folder = os.path.join(save_folder, 'XIAORONG')
         LAYOUT_ROWS = 2  
@@ -201,9 +206,9 @@ if __name__ == "__main__":
     MAX_OUTPUT_IMAGES = None 
     TARGET_IMAGE_IDS = None
     
-    # IMG_MODE = 'optimizer' 
+    IMG_MODE = 'optimizer' 
     # IMG_MODE = 'loss'
     # IMG_MODE = 'xiaorong'  
-    IMG_MODE = 'tverskyhd_pre'
+    # IMG_MODE = 'tverskyhd_pre'
 
     main(mode=IMG_MODE, test_img=TEST_DIR, result_root=RESULTS_ROOT, save_folder=SAVE_FOLDER, max_amount=MAX_OUTPUT_IMAGES, choose_img_id=TARGET_IMAGE_IDS)
