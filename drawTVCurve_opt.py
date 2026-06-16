@@ -68,15 +68,15 @@ def draw_crave(dicts, smooth_method='ewma', train_a=0.3, val_a=0.3, save_path=No
                 data_dict[opt][wd_key]['val'].append(val_l)
 
     # --- 创建画布 ---
-    fig, axes = plt.subplots(2, 2, figsize=(16, 10), constrained_layout=True)
-    plt.subplots_adjust(wspace=0.3, hspace=0.3) # 调整间距
+    fig, axes = plt.subplots(2, 2, figsize=(16, 13), constrained_layout=True)
+    # plt.subplots_adjust(wspace=0.3, hspace=0.3) # 调整间距
 
     # --- 定义绘图逻辑 ---
     def plot_subplot(ax, opt_data, loss_type, title):
-        ax.set_title(title, fontsize=18, fontweight='bold', pad=15)
-        ax.set_xlabel('Epoch', fontsize=12)
-        ax.set_ylabel('Loss', fontsize=12)
-        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.set_title(title, fontsize=20, fontweight='bold', pad=15)
+        ax.set_xlabel('Epoch', fontsize=20)
+        ax.set_ylabel('Loss', fontsize=20)
+        ax.grid(True, linestyle='--', alpha=0.8)
 
         # 遍历该优化器下的所有 WD 配置
         for wd, losses_dict in opt_data.items():
@@ -108,8 +108,9 @@ def draw_crave(dicts, smooth_method='ewma', train_a=0.3, val_a=0.3, save_path=No
             color = wd_colors.get(wd, '#000000') # 默认黑色
             label = f'WD={wd}'
             ax.plot(epochs, smoothed, label=label, color=color, linewidth=2.5, alpha=0.9)
+            ax.tick_params(axis='both', labelsize=16)  # 设置x轴和y轴刻度数字的字体大小
 
-        ax.legend(title='Weight Decay', fontsize=18, title_fontsize=20)
+        ax.legend(title='Weight Decay', fontsize=19, title_fontsize=19)
 
     # --- 绘制四张子图 ---
     
@@ -131,7 +132,7 @@ def draw_crave(dicts, smooth_method='ewma', train_a=0.3, val_a=0.3, save_path=No
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"✅ Saved plot to: {save_path}")
     if show_plot: plt.show()
-    else: plt.close()
+    plt.close()
 
 if __name__ == '__main__':
     experiments = {
@@ -175,4 +176,8 @@ if __name__ == '__main__':
         ],
         # 可视情况解开其他配置...
     }
-    draw_crave(experiments, smooth_method='ewma', train_a=0.3, val_a=0.1)
+    IMG_PATH=r'D:\Study\毕业设计\相关图片\Curve.png'
+    # IMG_PATH=None
+    SHOW_FLAG=False
+    # SHOW_FLAG=True
+    draw_crave(experiments, smooth_method='ewma', save_path=IMG_PATH, show_plot=SHOW_FLAG, train_a=0.3, val_a=0.1)
