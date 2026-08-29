@@ -1,0 +1,20 @@
+# resources
+images/
+images_split/
+pt_dataset/
+saved_results/
+logs_summary/
+spare_shutdown_file/
+compare_img/
+calcuMetrics/
+
+# config
+logs/
+
+# cache
+__pycache__/
+*.pyc
+*.pyo
+
+# temp file
+TO_DO.md

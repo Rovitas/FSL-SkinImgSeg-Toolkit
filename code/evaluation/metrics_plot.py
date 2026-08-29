@@ -1,0 +1,226 @@
+# -*- coding: utf-8 -*-
+import csv
+import os
+import re
+from datetime import datetime
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# ================= 全局排版配置 =================
+LABEL_FONT_SIZE = 18  
+VALUE_FONT_SIZE = 20  
+STD_FONT_SIZE = 16    
+
+# ================= 数据解析与计算 =================
+def parse_evaluation_file(file_path):
+    results = {}
+    try:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                exp_name = row.get('Experiment', '').strip()
+                if not exp_name: continue
+                
+                metrics = {}
+                for metric_name, value_str in row.items():
+                    if metric_name == 'Experiment': continue          
+                    value_str = value_str.strip()
+                    if value_str == 'N/A' or not value_str:
+                        metrics[metric_name] = np.nan
+                    else:
+                        try: metrics[metric_name] = float(value_str)
+                        except ValueError: metrics[metric_name] = np.nan  
+                results[exp_name] = metrics
+    except Exception as e:
+        print(f"❌ [读取 CSV 文件出错]: {file_path}\n[错误信息]: {e}")
+    return results
+
+def format_wd(wd_value):
+    if wd_value == 0: return "0"
+    return f"{wd_value:.0e}".replace("e-0", "e-")
+
+def calculate_loss_averages(results_dict, config_dict):
+    averaged = {}
+    for display_name, target_keyword in config_dict.items():
+        matched_metrics = [metrics for exp_name, metrics in results_dict.items() if target_keyword in exp_name]
+        if matched_metrics:
+            metrics_summary = {}
+            for metric_name in matched_metrics[0].keys():
+                vals = [m[metric_name] for m in matched_metrics if not np.isnan(m[metric_name])]
+                if vals:
+                    std_val = np.std(vals, ddof=1) if len(vals) > 1 else 0.0
+                    metrics_summary[metric_name] = {'mean': np.mean(vals), 'std': std_val}
+                else:
+                    metrics_summary[metric_name] = {'mean': np.nan, 'std': np.nan}
+            averaged[display_name] = metrics_summary
+    return averaged
+
+def calculate_optimizer_averages(results_dict):
+    grouped = {'Adam': {}, 'AdamW': {}}
+    for exp_name, metrics in results_dict.items():
+        opt = 'AdamW' if 'AdamW' in exp_name else 'Adam' if 'Adam' in exp_name else None
+        if not opt: continue
+        wd_match = re.search(r'wd_([0-9e.-]+)', exp_name)
+        if wd_match:
+            wd = float(wd_match.group(1))
+            grouped[opt].setdefault(wd, []).append(metrics)
+            
+    averaged = {'Adam': {}, 'AdamW': {}}
+    for opt, wd_groups in grouped.items():
+        for wd, metrics_list in wd_groups.items():
+            metrics_summary = {}
+            for metric_name in metrics_list[0].keys():
+                vals = [m[metric_name] for m in metrics_list if not np.isnan(m[metric_name])]
+                if vals:
+                    std_val = np.std(vals, ddof=1) if len(vals) > 1 else 0.0
+                    metrics_summary[metric_name] = {'mean': np.mean(vals), 'std': std_val}
+                else:
+                    metrics_summary[metric_name] = {'mean': np.nan, 'std': np.nan}
+            averaged[opt][wd] = metrics_summary
+    return averaged
+
+
+# ================= 核心绘图引擎 =================
+def create_split_reference_charts(averaged_data, base_title="Metrics", save_base_path=None):
+    models = list(averaged_data.keys())
+    if not models: 
+        print("⚠️ 警告：没有找到任何可以画图的数据！请检查 CSV 文件里是否有对应的模型配置。") # 加一句这个
+        return
+
+    models_reversed = list(reversed(models))
+    
+    metric_groups = [
+        {"name": "Part1_Core_Metrics", "title": f"{base_title}: Core Segmentation Metrics", "metrics": ['Dice (DSC)', 'IoU']},
+        {"name": "Part2_Auxiliary_Metrics", "title": f"{base_title}: Classification Metrics", "metrics": ['PR-AUC', 'Recall', 'Precision']},
+        {"name": "Part3_Distance_Metrics", "title": f"{base_title}: Boundary Metrics", "metrics": ['Boundary F1 Score', 'Average Surface Distance (ASD)']}
+    ]
+
+    cmap = plt.get_cmap('viridis')
+    colors = cmap(np.linspace(0.1, 0.9, len(models_reversed)))
+
+    for group in metric_groups:
+        n_metrics = len(group["metrics"]) 
+        fig, axes = plt.subplots(1, n_metrics, figsize=(8 * n_metrics, 10))
+        if n_metrics == 1: axes = [axes]
+        
+        for idx, metric in enumerate(group["metrics"]):
+            ax = axes[idx]
+            means = [averaged_data[m].get(metric, {}).get('mean', np.nan) for m in models_reversed]
+            stds  = [averaged_data[m].get(metric, {}).get('std', 0.0) for m in models_reversed]
+            
+            bars = ax.barh(models_reversed, means, height=0.82, color=colors, alpha=0.9,
+                           xerr=stds, capsize=6, error_kw={'elinewidth': 1.5, 'ecolor': '#444444'})
+            
+            ax.set_title(metric, fontsize=20, fontweight='bold', pad=20)
+            ax.grid(axis='x', linestyle='--', alpha=0.6, color='gray')
+            ax.set_axisbelow(True)
+            ax.set_yticks(np.arange(len(models_reversed)))
+            ax.set_yticklabels(models_reversed, fontsize=LABEL_FONT_SIZE, fontweight='bold')
+            ax.tick_params(axis='y', which='major', pad=10)
+            ax.tick_params(axis='x', which='major', labelsize=14)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+
+            max_val = max([m + s for m, s in zip(means, stds) if not np.isnan(m)] or [1.0])
+            if metric in ['Average Surface Distance (ASD)', 'Val Loss']: ax.set_xlim(0, max_val * 1.35) 
+            else: ax.set_xlim(0, min(1.35, max_val * 1.35)) 
+                
+            for bar, mean_val, std_val in zip(bars, means, stds):
+                w = bar.get_width()
+                if not np.isnan(w) and w > 0:
+                    fmt = '{:.2f}' if metric == 'Average Surface Distance (ASD)' else ('{:.4f}' if metric == 'Val Loss' else '{:.3f}')
+                    text_x = w + std_val + (ax.get_xlim()[1] * 0.015)
+                    y_center = bar.get_y() + bar.get_height() / 2.
+                    
+                    ax.text(text_x, y_center + 0.15, fmt.format(w), ha='left', va='center', 
+                            fontsize=VALUE_FONT_SIZE, color='black', fontweight='bold')
+                    if std_val >= 0:
+                        std_str = "<0.001" if std_val < 0.001 else fmt.format(std_val)
+                        ax.text(text_x, y_center - 0.20, f"(SD: {std_str})", ha='left', va='center', 
+                                fontsize=STD_FONT_SIZE, color='#555555', fontstyle='italic')
+
+        fig.suptitle(group["title"], fontsize=26, fontweight='bold', y=1.03)
+        plt.tight_layout(pad=2.0, w_pad=3.5)
+        
+        if save_base_path: 
+            save_path = f"{save_base_path}_{group['name']}.png"
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"✅ 生成子图表: {save_path}")
+
+# ================= 业务流水线 =================
+if __name__ == "__main__":
+    PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    BASE_PATH = os.path.join(PROJECT_ROOT, "calcuMetrics")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # ================= 配置字典区 =================
+    EXPERIMENTS_CONFIG = {
+        'xiaorong': {
+            'experiments': {
+                'Baseline': "Adam_wd_1e-05[",          
+                'BCE+AdamW': "AdamW_wd_1e-05[", 
+                'BCE+AdamW+Aug': "BCEDiceLoss_Aug[", 
+                'TverskyHD+Adam': 'TverskyHD(a0.3_b0.7w0.8_0.2)_Single[',  
+                'TverskyHD+AdamW': "TverskyHD(a0.3_b0.7w0.8_0.2)[", 
+                'Full Method': "TverskyHD(a0.3_b0.7w0.8_0.2)_Aug[",
+            },
+            'title': "Ablation Analysis"
+        },
+        'tverskyhd_pre': {
+            'experiments': {
+                'TverskyHD 5:5': "TverskyHD(a0.3_b0.7w0.5_0.5)[", 
+                'TverskyHD 6:4': "TverskyHD(a0.3_b0.7w0.6_0.4)[", 
+                'TverskyHD 7:3': "TverskyHD(a0.3_b0.7w0.7_0.3)[", 
+                'TverskyHD 8:2': "TverskyHD(a0.3_b0.7w0.8_0.2)[", 
+                'TverskyHD 9:1': "TverskyHD(a0.3_b0.7w0.9_0.1)[", 
+            },
+            'title': "TverskyHD Pre Analysis Comparison"
+        },
+        'loss': {
+            'experiments': {        
+                'BCE': "AdamW_wd_1e-05[",              
+                'Dice': "DiceLoss[",
+                'Focal': "FocalLoss(a0.25_g2)[",
+                'Tversky': "TverskyLoss(a0.3_b0.7)[",
+                'TverskyHD': "TverskyHD(a0.3_b0.7w0.8_0.2)[",
+            },
+            'title': "Loss Comparison"
+        }
+    }
+    
+    # [模式切换] : 'loss', 'optimizer', 'xiaorong', 'tverskyhd_pre'
+    PLOT_MODE = 'tverskyhd_pre' 
+    
+    IMG_BASE_PATH = os.path.join(BASE_PATH, 'image', f'{PLOT_MODE}_metrics_{timestamp}')
+    os.makedirs(os.path.dirname(IMG_BASE_PATH), exist_ok=True)
+    
+    csv_file_path = os.path.join(BASE_PATH, "Losses_Comparsion.csv")
+    
+    if PLOT_MODE in EXPERIMENTS_CONFIG:
+        config = EXPERIMENTS_CONFIG[PLOT_MODE]
+        all_results = parse_evaluation_file(csv_file_path)
+        averaged_data = calculate_loss_averages(all_results, config['experiments'])
+        
+        # 只生成 Bar Chart 图表
+        create_split_reference_charts(averaged_data, base_title=config['title'], save_base_path=IMG_BASE_PATH) 
+        
+    elif PLOT_MODE == 'optimizer':
+        # 针对 Optimizer 的特殊计算逻辑
+        adam_res = parse_evaluation_file(os.path.join(BASE_PATH, "Adam.csv"))
+        adamw_res = parse_evaluation_file(os.path.join(BASE_PATH, "AdamW.csv"))
+        all_results = {**adam_res, **adamw_res}
+        raw_opt_data = calculate_optimizer_averages(all_results)
+        
+        flattened_opt_data = {}
+        wd_values_sorted = sorted(set(list(raw_opt_data['Adam'].keys()) + list(raw_opt_data['AdamW'].keys())))
+        for wd in wd_values_sorted:
+            formatted_wd = format_wd(wd)
+            if wd in raw_opt_data['Adam']: flattened_opt_data[f"Adam (WD={formatted_wd})"] = raw_opt_data['Adam'][wd]
+            if wd in raw_opt_data['AdamW']: flattened_opt_data[f"AdamW (WD={formatted_wd})"] = raw_opt_data['AdamW'][wd]
+                
+        # 只生成 Bar Chart 图表
+        create_split_reference_charts(flattened_opt_data, base_title="Optimizer Analysis", save_base_path=IMG_BASE_PATH)
+    else:
+        print(f"⚠️ Unknown PLOT_MODE: {PLOT_MODE}")
