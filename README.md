@@ -14,7 +14,7 @@ tips：The following path are all from the root（**FSL-SkinImgSeg-Toolkit**）.
 
 ## 预处理 / Preprocess
 
-- datasets_splitor.py
+- datasets_split.py
 
   - **功能**：将原始数据集分割按6 : 2 : 2的比例分割成训练集、验证集和测试集
 
@@ -70,7 +70,7 @@ tips：The following path are all from the root（**FSL-SkinImgSeg-Toolkit**）.
 
 ## 性能评估 / Evaluation
 
-- logs_copier.py 
+- logs_copy.py 
 
   - **功能**：批量迁移训练日志
 
@@ -82,7 +82,7 @@ tips：The following path are all from the root（**FSL-SkinImgSeg-Toolkit**）.
 
   - **使用方法**：在Python的程序主入口填写好相关配置（颜色、绘图样式、读取和保存地址等配置均有预设默认值），运行代码 **logs_copier.py** 即可
 
-- image_comparion.py 
+- image_compare.py 
 
   - **功能**：绘制不同模型对同一图像的预测结果的对照图（定性分析）
 
