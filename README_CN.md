@@ -1,7 +1,7 @@
 
 # **小样本皮肤病变医学图像分割一站式工具包 / FSL-SkinSeg-Toolkit**
 
-- [简体中文] | [`English version`](./README.md) 
+- [简体中文] | [English](./README.md) 
 
 # 简介
 

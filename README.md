@@ -1,6 +1,6 @@
 # **Few-Shot Skin Lesion Medical Image Segmentation Toolkit / FSL-SkinSeg-Toolkit**
 
-- [简体中文](./README_CN.md) | [English version] 
+- [简体中文](./README_CN.md) | [English] 
 
 # Introduction
 
